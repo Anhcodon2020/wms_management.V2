@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Data - Quản Lý Hàng Hóa</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Thu vien doc file Excel (SheetJS) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 14px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #3498db; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f9f9f9; }
+        .empty-row { text-align: center; color: #888; padding: 20px; }
+
+        /* Modal & Form */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 999; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group.full-width { grid-column: span 3; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-size: 13px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        
+        .btn-submit { width: 100%; padding: 12px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        .btn-submit:hover { background: #2980b9; }
+        .btn-cancel { width: 100%; padding: 10px; background: transparent; color: #7f8c8d; border: none; margin-top: 5px; cursor: pointer; }
+        .search-box { padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 300px; margin-right: 10px; }
+
+        /* Toast */
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 16px; opacity: 0; transition: opacity 0.5s, bottom 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        .toast.success { background-color: #2ecc71; }
+        .toast.error { background-color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>Danh Sách Hàng Hóa (Master Data)</h2>
+            <div style="display: flex;">
+                <input type="text" id="searchInput" class="search-box" placeholder="🔍 Tìm SKU, Mô tả, NCC..." onkeyup="searchData()">
+                <button onclick="downloadTemplate()" style="padding: 10px 20px; background: #95a5a6; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;" title="Tải file mẫu nhập liệu">⬇️ Tải Mẫu</button>
+                <button onclick="exportData()" style="padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;" title="Xuất dữ liệu ra Excel">📤 Xuất Excel</button>
+                <button onclick="document.getElementById('excelInput').click()" style="padding: 10px 20px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">📂 Import Excel</button>
+                <button onclick="openModal()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; cursor: pointer;">+ Thêm Mới</button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Mã NCC</th>
+                        <th>SKU</th>
+                        <th>Số Lượng</th>
+                        <th>Dài x Rộng x Cao</th>
+                        <th>CBM</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTable">
+                    <tr><td colspan="8" class="empty-row">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="dataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Thông Tin Hàng Hóa</div>
+            <input type="hidden" id="dataId">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nhà Cung Cấp (*)</label>
+                    <select id="mancc"><option value="">-- Chọn NCC --</option></select>
+                </div>
+                <div class="form-group">
+                    <label>SKU (*)</label>
+                    <input type="text" id="sku">
+                </div>
+                <div class="form-group">
+                    <label>Số Lượng (*)</label>
+                    <input type="number" id="quantity" value="0" oninput="calculateCBM()">
+                </div>
+                
+                <div class="form-group full-width">
+                    <label>Mô Tả</label>
+                    <input type="text" id="description">
+                </div>
+
+                <div class="form-group"><label>Dài (Length)</label><input type="number" step="0.01" id="length" oninput="calculateCBM()"></div>
+                <div class="form-group"><label>Rộng (Width)</label><input type="number" step="0.01" id="width" oninput="calculateCBM()"></div>
+                <div class="form-group"><label>Cao (Height)</label><input type="number" step="0.01" id="height" oninput="calculateCBM()"></div>
+
+                <div class="form-group"><label>Trọng Lượng (Weight)</label><input type="number" step="0.01" id="weight"></div>
+                <div class="form-group"><label>CBM</label><input type="number" step="0.0001" id="cbm"></div>
+                <div class="form-group"><label>Carton/Pallet</label><input type="number" id="cartonperpallet"></div>
+
+                <div class="form-group"><label>Loại Pallet</label><input type="text" id="kindpallet"></div>
+                <div class="form-group"><label>Chipboard</label><input type="text" id="chipboard"></div>
+                <div class="form-group"><label>Loose Case</label><input type="text" id="loosecase"></div>
+
+                <div class="form-group full-width"><label>Refix</label><input type="text" id="refix"></div>
+                <div class="form-group full-width"><label>Ghi Chú (Remark)</label><input type="text" id="remark"></div>
+            </div>
+            
+            <button class="btn-submit" onclick="saveData()">Lưu Dữ Liệu</button>
+            <button class="btn-cancel" onclick="closeModal()">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Xem Chi Tiet SKU (Popup View) -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content" style="width: 600px;">
+            <div class="modal-header">Chi Tiết SKU: <span id="viewSkuTitle" style="color: #3498db;"></span></div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                <div><strong>Nhà Cung Cấp:</strong> <div id="viewNCC" style="color:#555;"></div></div>
+                <div><strong>SKU:</strong> <div id="viewSKU" style="font-weight:bold; color:#2c3e50;"></div></div>
+                
+                <div style="grid-column: span 2;"><strong>Mô Tả:</strong> <div id="viewDesc" style="font-style: italic;"></div></div>
+                
+                <div><strong>Số Lượng:</strong> <div id="viewQty" style="color:#27ae60; font-weight:bold;"></div></div>
+                <div><strong>Trọng Lượng:</strong> <div id="viewWeight"></div></div>
+                
+                <div><strong>Kích Thước (L*W*H):</strong> <div id="viewDim"></div></div>
+                <div><strong>CBM:</strong> <div id="viewCBM"></div></div>
+                
+                <div><strong>Carton/Pallet:</strong> <div id="viewCPP"></div></div>
+                <div><strong>Loại Pallet:</strong> <div id="viewKind"></div></div>
+                
+                <div style="grid-column: span 2; background:#f9f9f9; padding:10px; border-radius:5px;"><strong>Ghi Chú:</strong> <div id="viewRemark"></div></div>
+            </div>
+            <button class="btn-cancel" onclick="document.getElementById('viewModal').style.display='none'" style="width: 100%; background: #3498db; color: white; margin-top: 20px;">Đóng</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"><span id="toast-msg">Thông báo</span></div>
+
+    <!-- Input file an de chon file Excel -->
+    <input type="file" id="excelInput" hidden accept=".xlsx, .xls" onchange="processExcel()">
+
+    <script>
+        let searchTimeout;
+        
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerHTML = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = t.className.replace('show', ''), 3000);
+        }
+
+        function openModal(editData = null) {
+            document.getElementById('dataModal').style.display = 'flex';
+            // Truyen MANCC vao de chon sau khi load xong (fix loi khong hien thi khi mang cham)
+            const selectedNCC = editData ? editData.MANCC : null;
+            loadSuppliers(selectedNCC); 
+            
+            if (editData) {
+                document.getElementById('dataId').value = editData.id;
+                document.getElementById('mancc').disabled = false;
+                document.getElementById('sku').value = editData.sku;
+                document.getElementById('description').value = editData.description;
+                document.getElementById('quantity').value = editData.quantity;
+                document.getElementById('weight').value = editData.weight;
+                document.getElementById('length').value = editData.length;
+                document.getElementById('width').value = editData.width;
+                document.getElementById('height').value = editData.height;
+                document.getElementById('cbm').value = editData.cbm;
+                document.getElementById('refix').value = editData.refix;
+                document.getElementById('remark').value = editData.remark;
+                document.getElementById('loosecase').value = editData.loosecase;
+                document.getElementById('cartonperpallet').value = editData.cartonperpallet;
+                document.getElementById('kindpallet').value = editData.kindpallet;
+                document.getElementById('chipboard').value = editData.chipboard;
+            } else {
+                document.querySelectorAll('#dataModal input').forEach(i => i.value = '');
+                document.getElementById('mancc').value = '';
+                document.getElementById('mancc').disabled = false;
+            }
+        }
+        function closeModal() { document.getElementById('dataModal').style.display = 'none'; }
+
+        // Tai danh sach NCC de dien vao Dropdown
+        function loadSuppliers(selectedVal = null) {
+            fetch('/api/suppliers').then(r => r.json()).then(data => {
+                const sel = document.getElementById('mancc');
+                sel.innerHTML = '<option value="">-- Chọn NCC --</option>';
+                data.forEach(s => {
+                    sel.innerHTML += `<option value="${s.MANCC}">${s.TENNCC} (${s.MANCC})</option>`;
+                });
+                if(selectedVal) sel.value = selectedVal;
+            });
+        }
+
+        // Ham tu dong tinh CBM = (L*W*H)/1M * So luong
+        function calculateCBM() {
+            const l = parseFloat(document.getElementById('length').value) || 0;
+            const w = parseFloat(document.getElementById('width').value) || 0;
+            const h = parseFloat(document.getElementById('height').value) || 0;
+            const qty = parseFloat(document.getElementById('quantity').value) || 0;
+
+            if (l > 0 && w > 0 && h > 0) {
+                const cbm = ((l * w * h) / 1000000) * qty;
+                document.getElementById('cbm').value = cbm.toFixed(4);
+            }
+        }
+
+        function loadData(q = '') {
+            let url = '/api/masterdata';
+            if (q) url += `?q=${encodeURIComponent(q)}`;
+            
+            fetch(url).then(r => r.json()).then(data => {
+                // Luu data vao bien toan cuc de dung cho popup
+                window.currentMasterData = data;
+                const tb = document.getElementById('dataTable');
+                tb.innerHTML = '';
+                if (data.length === 0) { tb.innerHTML = '<tr><td colspan="8" class="empty-row">Không tìm thấy dữ liệu</td></tr>'; return; }
+                
+                data.forEach((item, index) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item.id}</td>
+                        <td>
+                            <b>${item.MANCC}</b><br>
+                            <span style="font-size: 12px; color: #666;">${item.name_doc || ''}</span>
+                        </td>
+                        <td><b style="cursor:pointer; color:#3498db; text-decoration:underline;" onclick="viewSku(${index})" title="Xem chi tiết">${item.sku}</b></td>
+                        <td>${item.quantity}</td>
+                        <td>${item.length||0} x ${item.width||0} x ${item.height||0}</td>
+                        <td>${item.cbm || ''}</td>
+                        <td><button style="padding:5px; background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer;" onclick='openModal(window.currentMasterData[${index}])'>Sửa</button></td>
+                    `;
+                    tb.appendChild(tr);
+                });
+            });
+        }
+
+        // Ham hien thi popup xem chi tiet
+        function viewSku(index) {
+            const item = window.currentMasterData[index];
+            if (!item) return;
+
+            document.getElementById('viewSkuTitle').innerText = item.sku;
+            document.getElementById('viewNCC').innerText = `${item.MANCC} - ${item.name_doc || ''}`;
+            document.getElementById('viewSKU').innerText = item.sku;
+            document.getElementById('viewDesc').innerText = item.description || '(Không có mô tả)';
+            document.getElementById('viewQty').innerText = item.quantity;
+            document.getElementById('viewWeight').innerText = (item.weight || 0) + ' kg';
+            document.getElementById('viewDim').innerText = `${item.length||0} x ${item.width||0} x ${item.height||0} cm`;
+            document.getElementById('viewCBM').innerText = item.cbm || 0;
+            document.getElementById('viewCPP').innerText = item.cartonperpallet || 0;
+            document.getElementById('viewKind').innerText = item.kindpallet || '-';
+            document.getElementById('viewRemark').innerText = item.remark || '(Trống)';
+
+            document.getElementById('viewModal').style.display = 'flex';
+        }
+
+        function saveData() {
+            const id = document.getElementById('dataId').value;
+            const data = {
+                MANCC: document.getElementById('mancc').value,
+                sku: document.getElementById('sku').value,
+                description: document.getElementById('description').value,
+                quantity: document.getElementById('quantity').value,
+                weight: document.getElementById('weight').value,
+                length: document.getElementById('length').value,
+                width: document.getElementById('width').value,
+                height: document.getElementById('height').value,
+                cbm: document.getElementById('cbm').value,
+                refix: document.getElementById('refix').value,
+                remark: document.getElementById('remark').value,
+                loosecase: document.getElementById('loosecase').value,
+                cartonperpallet: document.getElementById('cartonperpallet').value,
+                kindpallet: document.getElementById('kindpallet').value,
+                chipboard: document.getElementById('chipboard').value
+            };
+
+            if (!data.MANCC || !data.sku) { showToast('Vui lòng chọn NCC và nhập SKU', 'error'); return; }
+
+            const method = id ? 'PUT' : 'POST';
+            if (id) data.id = id;
+
+            fetch('/api/masterdata', {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Lưu thành công!');
+                closeModal();
+                loadData(document.getElementById('searchInput').value);
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadData(document.getElementById('searchInput').value), 500);
+        }
+
+        // --- LOGIC IMPORT EXCEL ---
+        function processExcel() {
+            const fileInput = document.getElementById('excelInput');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    
+                    // Lay sheet dau tien
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // Chuyen doi sang JSON
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    if (jsonData.length === 0) {
+                        showToast('File Excel không có dữ liệu!', 'error');
+                        return;
+                    }
+
+                    // Gui du lieu len Server
+                    showToast('Đang xử lý dữ liệu...', 'success');
+                    fetch('/api/masterdata/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(jsonData)
+                    })
+                    .then(async res => {
+                        const result = await res.json();
+                        if (!res.ok) throw new Error(result.error || 'Lỗi Import');
+                        
+                        showToast(result.message, 'success');
+                        loadData(); // Tai lai bang sau khi import
+                    })
+                    .catch(err => {
+                        showToast('Lỗi Import: ' + err.message, 'error');
+                    });
+
+                } catch (error) {
+                    showToast('Lỗi đọc file Excel!', 'error');
+                    console.error(error);
+                }
+                fileInput.value = ''; // Reset input
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- LOGIC EXPORT & TEMPLATE ---
+        function downloadTemplate() {
+            // Tao file Excel mau voi cac cot can thiet (du lieu gia lap de nguoi dung hieu)
+            const headers = [
+                { "Vendor Code": "NCC001", "SKU": "SP001", "Qty Per MC": 10, "Weight": 5.5, "Length": 100, "Width": 50, "Height": 30 }
+            ];
+            const ws = XLSX.utils.json_to_sheet(headers);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Template");
+            XLSX.writeFile(wb, "MasterData_Template.xlsx");
+        }
+
+        function exportData() {
+            if (!window.currentMasterData || window.currentMasterData.length === 0) {
+                showToast('Không có dữ liệu để xuất!', 'error');
+                return;
+            }
+            
+            // Chuan bi du lieu xuat (map du lieu tu giao dien sang file excel)
+            const dataToExport = window.currentMasterData.map(item => ({
+                "ID": item.id, "Vendor Code": item.MANCC, "SKU": item.sku, "Description": item.description,
+                "Qty": item.quantity, "Weight": item.weight,
+                "Length": item.length, "Width": item.width, "Height": item.height, "CBM": item.cbm,
+                "Remark": item.remark
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "MasterData");
+            XLSX.writeFile(wb, "MasterData_Export.xlsx");
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

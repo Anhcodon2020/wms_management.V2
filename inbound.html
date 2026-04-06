@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Nhập Kho (Inbound) - WMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Thu vien Xuat Excel (SheetJS) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 14px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #3498db; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f9f9f9; }
+        .empty-row { text-align: center; color: #888; padding: 20px; font-style: italic; }
+
+        /* Modal & Form */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 999; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group.full { grid-column: span 2; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-size: 13px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        
+        .btn-submit { width: 100%; padding: 12px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        .btn-submit:hover { background: #2980b9; }
+        .btn-cancel { width: 100%; padding: 10px; background: transparent; color: #7f8c8d; border: none; margin-top: 5px; cursor: pointer; }
+        
+        /* Toast */
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 16px; opacity: 0; transition: opacity 0.5s, bottom 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        .toast.success { background-color: #2ecc71; }
+        .toast.error { background-color: #e74c3c; }
+
+        /* Style cho bang tong hop trong popup */
+        .summary-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 15px; }
+        .summary-table th, .summary-table td { padding: 10px; text-align: left; border: 1px solid #ddd; }
+        .summary-table th { background-color: #f2f2f2; font-weight: 600; }
+        .summary-table input { width: 100%; padding: 5px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; text-align: center; }
+        .summary-table tr:last-child { font-weight: bold; background-color: #e8f6f3; }
+
+        /* Style cho bang tong hop Packing List */
+        .pl-summary-section { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid #9b59b6; }
+        .pl-summary-header { font-size: 15px; font-weight: bold; color: #2c3e50; margin-bottom: 10px; }
+        .pl-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .pl-table th { background-color: #9b59b6; color: white; padding: 8px; text-align: left; }
+        .pl-table td { border-bottom: 1px solid #eee; padding: 8px; color: #333; }
+
+        /* Style cho phân trang và nút xóa */
+        .pagination { display: flex; justify-content: center; gap: 5px; margin-top: 15px; }
+        .page-btn { padding: 5px 12px; border: 1px solid #ddd; background: white; cursor: pointer; border-radius: 4px; transition: 0.3s; }
+        .page-btn.active { background: #9b59b6; color: white; border-color: #9b59b6; }
+        .page-btn:hover:not(.active) { background: #f0f0f0; }
+
+        .btn-delete-pl { 
+            padding: 5px 10px; 
+            background: linear-gradient(135deg, #e74c3c, #c0392b); 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 5px;
+            transition: 0.3s;
+        }
+        .btn-delete-pl:hover { 
+            transform: scale(1.05);
+            box-shadow: 0 2px 5px rgba(231, 76, 60, 0.4);
+            background: #c0392b;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound.html">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>Quản Lý Nhập Kho (Inbound)</h2>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="date" id="startDate" title="Từ ngày" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                <span style="color:#666">-</span>
+                <input type="date" id="endDate" title="Đến ngày" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                <input type="text" id="searchInput" placeholder="Tìm PO, SKU, NCC..." onkeyup="searchData()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 200px;">
+                
+                <button onclick="loadData()" style="padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">🔍 Lọc</button>
+                <button onclick="openModal()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; cursor: pointer;">+ Thêm Mới</button>
+                <button onclick="printTallySheet()" style="padding: 10px 20px; background: #34495e; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;">🖨️ In Tally Sheet</button>
+                <button onclick="openExportModal()" style="padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;">📊 Xuất Excel</button>
+            </div>
+        </div>
+
+        <!-- Bang tong hop theo Packing List -->
+        <div class="pl-summary-section" id="plSummarySection" style="display:none; margin-bottom: 30px;">
+            <div class="pl-summary-header">📋 Tổng Hợp Theo Packing List</div>
+            <table class="pl-table">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAllPL" onchange="toggleAllPLCheckboxes(this)"></th>
+                        <th>Packing List No</th>
+                        <th>Ngày Nhập</th>
+                        <th>Nhà Cung Cấp</th>
+                        <th>Số Cont/Xe</th>
+                        <th>Danh Sách PO</th>
+                        <th>Tổng Carton</th>
+                        <th>Tổng CBM</th>
+                        <th>Labour</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="plSummaryBody"></tbody>
+            </table>
+            <div id="plPagination" class="pagination"></div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ngày Nhận</th>
+                        <th>Nhà Cung Cấp</th>
+                        <th>PO</th>
+                        <th>SKU</th>
+                        <th>Carton</th>
+                        <th>CBM</th>
+                        <th>Cont/Xe</th>
+                        <th>Packing List</th>
+                        <th>Labour</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTable">
+                    <tr><td colspan="10" class="empty-row">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Export Excel -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">Xuất Dữ Liệu Excel</div>
+            <div class="form-group">
+                <label>Từ ngày</label>
+                <input type="date" id="exportStartDate">
+            </div>
+            <div class="form-group">
+                <label>Đến ngày</label>
+                <input type="date" id="exportEndDate">
+            </div>
+            <div class="form-group">
+                <label>Labour (Lực lượng)</label>
+                <select id="exportLabour">
+                    <option value="ALL">Tất cả</option>
+                    <option value="INSOURCE">Insource</option>
+                    <option value="OUTSOURCE">Outsource</option>
+                </select>
+            </div>
+            <button class="btn-submit" onclick="executeExport()">Xác Nhận Xuất Excel</button>
+            <button class="btn-cancel" onclick="document.getElementById('exportModal').style.display='none'">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Form -->
+    <div id="dataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Thông Tin Nhập Kho</div>
+            <input type="hidden" id="dataId">
+            <div class="form-grid">
+                <div class="form-group full">
+                    <label>Nhà Cung Cấp (*)</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="mancc" placeholder="Mã NCC" readonly style="background-color: #f9f9f9; width: 150px;">
+                        <input type="text" id="tenncc" placeholder="Tên Nhà Cung Cấp (Name Doc)" readonly style="background-color: #f9f9f9; flex: 1;">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>PO (Parent PO) (*)</label>
+                    <input type="text" id="po" list="poList" onchange="loadSkusByPo()" placeholder="Nhập hoặc chọn PO">
+                    <datalist id="poList"></datalist>
+                </div>
+                <div class="form-group"><label>SKU (*)</label><select id="sku" onchange="updateSkuData()"><option value="">-- Chọn SKU --</option></select></div>
+                
+                <div class="form-group"><label>Ngày Nhận (Date Rcv)</label><input type="date" id="datercv"></div>
+                <div class="form-group"><label>Packing List No</label><input type="text" id="packinglistno" oninput="updatePLTotals()"></div>
+
+                <div class="form-group"><label>Số Carton (*)</label><input type="number" id="carton" oninput="calculateTotalCBM()"></div>
+                <div class="form-group"><label>CBM (Auto)</label><input type="number" step="0.001" id="cbm" readonly style="background-color: #f0f0f0;"></div>
+                
+                <div class="form-group"><label>Cont / Xe</label><input type="text" id="contxe"></div>
+                <div class="form-group"><label>Labour</label><input type="text" id="labour"></div>
+
+                <div class="form-group"><label>Tổng Carton (PL hiện tại)</label><input type="text" id="plTotalCarton" readonly style="background-color: #f8f9fa; font-weight: bold; color: #d35400; border: 1px dashed #d35400;"></div>
+                <div class="form-group"><label>Tổng CBM (PL hiện tại)</label><input type="text" id="plTotalCbm" readonly style="background-color: #f8f9fa; font-weight: bold; color: #27ae60; border: 1px dashed #27ae60;"></div>
+            </div>
+            
+            <button class="btn-submit" onclick="saveData()">Lưu Dữ Liệu</button>
+            <button class="btn-cancel" onclick="closeModal()">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Xem Chi Tiết Giao Dịch theo Parent PO -->
+    <div id="poDetailsModal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1000px;">
+            <div class="modal-header">Chi Tiết Nhập Kho - PO: <span id="detailPoTitle" style="color: #3498db;"></span></div>
+            <div style="overflow-x: auto;">
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>Ngày Nhận</th>
+                            <th>SKU</th>
+                            <th>Số Carton</th>
+                            <th>CBM</th>
+                            <th>Số Cont/Xe</th>
+                            <th>Packing List</th>
+                            <th>Ghi chú (Labour)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="poDetailsBody"></tbody>
+                    <tr style="background: #f8f9fa; font-weight: bold;">
+                        <td colspan="2" style="text-align: right;">TỔNG CỘNG:</td>
+                        <td id="detailTotalCarton">0</td>
+                        <td id="detailTotalCbm">0.000</td>
+                        <td colspan="3"></td>
+                    </tr>
+                </table>
+            </div>
+            <button class="btn-cancel" onclick="document.getElementById('poDetailsModal').style.display='none'" style="width: 100%; background: #3498db; color: white; margin-top: 20px;">Đóng Cửa Sổ</button>
+        </div>
+    </div>
+
+    <!-- Modal Sua Packing List (Bulk Edit) -->
+    <div id="editPLModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">Sửa Packing List (Hàng Loạt)</div>
+            <input type="hidden" id="editPL_No">
+            <div class="form-group">
+                <label>Packing List No</label>
+                <input type="text" id="editPL_Display" readonly style="background-color: #eee; font-weight: bold;">
+            </div>
+            <div class="form-group">
+                <label>Ngày Nhận (Date Rcv)</label>
+                <input type="date" id="editPL_Date">
+            </div>
+            <div class="form-group">
+                <label>Cont / Xe</label>
+                <input type="text" id="editPL_Cont">
+            </div>
+            <div class="form-group">
+                <label>Labour</label>
+                <input type="text" id="editPL_Labour">
+            </div>
+            <button class="btn-submit" onclick="saveEditPL()">Cập Nhật Toàn Bộ PL</button>
+            <button class="btn-cancel" onclick="document.getElementById('editPLModal').style.display='none'">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Xac Nhan Luu -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content" style="width: 600px;">
+            <div class="modal-header">Xác Nhận Thông Tin Nhận Hàng</div>
+            <p>Vui lòng kiểm tra kế hoạch (BBR) và số lượng thực nhận:</p>
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>Child PO (BBR)</th>
+                            <th>SL Kế Hoạch (BBR)</th>
+                            <th>SL Thực Nhận</th>
+                            <th>SL Còn Lại</th>
+                            <th>Trạng Thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="confirmTableBody"></tbody>
+                </table>
+            </div>
+            <div style="text-align: right; margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn-cancel" onclick="document.getElementById('confirmModal').style.display='none'" style="background: #95a5a6; color: white; width: auto; padding: 10px 20px;">Hủy</button>
+                <button class="btn-submit" onclick="executeSave()" style="width: auto; padding: 10px 20px; margin-top: 0;">Xác Nhận Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"><span id="toast-msg">Thông báo</span></div>
+
+    <script>
+        let searchTimeout;
+        let currentData = [];
+        let currentSkuList = []; // Luu danh sach SKU cua PO dang chon de lay CBM
+        let dataToSave = null; // Bien tam de luu du lieu truoc khi xac nhan
+        let currentPLPage = 1;
+        const rowsPerPLPage = 20;
+        let sortedPLData = [];
+
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerHTML = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = t.className.replace('show', ''), 3000);
+        }
+
+        function openModal(editData = null) {
+            document.getElementById('dataModal').style.display = 'flex';
+            
+            // Load danh sach Parent PO
+            loadParentPOs(editData ? editData.po : null, editData ? editData.sku : null);
+
+            if (editData) {
+                document.getElementById('dataId').value = editData.id;
+                document.getElementById('mancc').value = editData.MANCC || '';
+                document.getElementById('tenncc').value = editData.name_doc || editData.TENNCC || '';
+                // PO va SKU se duoc set trong ham loadParentPOs -> loadSkusByPo
+                // Voi Input Datalist, ta gan value truc tiep
+                document.getElementById('po').value = editData.po;
+                
+                // Ưu tiên hiển thị qty_partial nếu có giá trị
+                document.getElementById('carton').value = (editData.qty_partial !== null && editData.qty_partial !== undefined) ? editData.qty_partial : editData.carton;
+                document.getElementById('cbm').value = editData.cbm;
+                document.getElementById('contxe').value = editData.contxe;
+                document.getElementById('labour').value = editData.labour;
+                document.getElementById('packinglistno').value = editData.PackinglistNo;
+                updatePLTotals(); // Load tong khi mo modal edit
+                document.getElementById('datercv').value = editData.datercv ? editData.datercv.split('T')[0] : '';
+            } else {
+                document.querySelectorAll('#dataModal input').forEach(i => i.value = '');
+                document.getElementById('dataId').value = '';
+                document.getElementById('po').value = ''; // Reset input PO
+                document.getElementById('sku').innerHTML = '<option value="">-- Chọn SKU --</option>';
+                document.getElementById('tenncc').value = '';
+                document.getElementById('plTotalCarton').value = '0';
+                document.getElementById('plTotalCbm').value = '0.000';
+                loadParentPOs(); // Load PO cho form them moi
+                // Mac dinh ngay hom nay
+                document.getElementById('datercv').value = new Date().toISOString().split('T')[0];
+            }
+        }
+        function closeModal() { document.getElementById('dataModal').style.display = 'none'; }
+
+        // 1. Load Parent PO List
+        function loadParentPOs(selectedPO, selectedSku) {
+            fetch('/api/bbr/dropdown/parents')
+                .then(r => {
+                    if (!r.ok) throw new Error('Lỗi Server: ' + r.statusText); 
+                    return r.json();
+                })
+                .then(data => {
+                const dataList = document.getElementById('poList');
+                dataList.innerHTML = '';
+                
+                if (!Array.isArray(data)) {
+                    console.error('Dữ liệu Parent PO không hợp lệ:', data);
+                    return;
+                }
+
+                data.forEach(item => {
+                    if (item.parentpo) { // Chi hien thi neu co gia tri
+                        dataList.innerHTML += `<option value="${item.parentpo}">`;
+                    }
+                });
+                if (selectedPO) {
+                    document.getElementById('po').value = selectedPO;
+                    // Neu dang Edit, sau khi set PO thi load tiep SKU
+                    loadSkusByPo(selectedSku);
+                }
+            })
+            .catch(err => {
+                console.error('Lỗi tải Parent PO:', err);
+                showToast('Không tải được danh sách PO: ' + err.message, 'error');
+            });
+        }
+
+        // 2. Load SKU theo PO da chon
+        function loadSkusByPo(preSelectedSku = null) {
+            const parentPo = document.getElementById('po').value;
+            const skuSel = document.getElementById('sku');
+            skuSel.innerHTML = '<option value="">-- Đang tải... --</option>';
+            currentSkuList = []; // Reset list
+
+            if (!parentPo) {
+                skuSel.innerHTML = '<option value="">-- Chọn SKU --</option>';
+                return;
+            }
+
+            fetch(`/api/bbr/dropdown/items?parentpo=${encodeURIComponent(parentPo)}`)
+                .then(r => {
+                    if (!r.ok) throw new Error('Lỗi tải SKU');
+                    return r.json();
+                })
+                .then(data => {
+                    currentSkuList = data; // Luu lai de dung CBM sau nay
+                    skuSel.innerHTML = '<option value="">-- Chọn SKU --</option>';
+                    
+                    if (!Array.isArray(data)) return;
+
+                    // AUTO-FILL MANCC: Lay supplier tu item dau tien trong list (vi cung 1 PO thuong cung 1 NCC)
+                    if (data.length > 0 && data[0].supplier) {
+                        document.getElementById('mancc').value = data[0].supplier;
+                        document.getElementById('tenncc').value = data[0].name_doc || '';
+                    } else {
+                        document.getElementById('mancc').value = '';
+                        document.getElementById('tenncc').value = '';
+                    }
+
+                    data.forEach(item => {
+                        // item.cbm o day la CBM tren 1 don vi/case trong BBR
+                        skuSel.innerHTML += `<option value="${item.item}" data-cbm="${item.cbm}">${item.item}</option>`;
+                    });
+                    if (preSelectedSku) skuSel.value = preSelectedSku;
+                })
+                .catch(e => console.error(e));
+        }
+
+        // 3. Tinh toan CBM = So Carton * CBM (trong BBR)
+        function calculateTotalCBM() {
+            const skuSel = document.getElementById('sku');
+            const selectedOption = skuSel.options[skuSel.selectedIndex];
+            const unitCbm = parseFloat(selectedOption.getAttribute('data-cbm')) || 0;
+            const carton = parseFloat(document.getElementById('carton').value) || 0;
+
+            document.getElementById('cbm').value = (unitCbm * carton).toFixed(3);
+        }
+
+        // 4. Lay tong Carton va CBM hien tai cua Packing List
+        function updatePLTotals() {
+            const plNo = document.getElementById('packinglistno').value.trim();
+            const cartonField = document.getElementById('plTotalCarton');
+            const cbmField = document.getElementById('plTotalCbm');
+
+            if (!plNo) {
+                cartonField.value = '0';
+                cbmField.value = '0.000';
+                return;
+            }
+
+            fetch(`/api/inbound/pl-totals/${encodeURIComponent(plNo)}`)
+                .then(r => r.json())
+                .then(data => {
+                    cartonField.value = data.totalCarton || 0;
+                    cbmField.value = (data.totalCbm || 0).toFixed(3);
+                })
+                .catch(err => console.error('Lỗi lấy tổng PL:', err));
+        }
+
+        // Khi doi SKU cung tinh lai luon (neu da nhap carton)
+        function updateSkuData() {
+            calculateTotalCBM();
+        }
+
+        // --- CAC HAM HO TRO POPUP XAC NHAN ---
+        function updateRowStatus(input) {
+            const row = input.closest('tr');
+            const planQty = parseFloat(row.querySelector('.plan-qty').innerText) || 0;
+            const recvQty = parseFloat(input.value) || 0;
+            const statusCell = row.querySelector('.status-cell');
+            
+            let status = 'Pending';
+            let color = '#95a5a6';
+            
+            if (recvQty > 0) {
+                if (recvQty === planQty) {
+                    status = 'Receiving';
+                    color = '#2ecc71';
+                } else {
+                    status = 'Partial';
+                    color = '#f39c12';
+                }
+            }
+            
+            statusCell.innerText = status;
+            statusCell.style.color = color;
+            
+            updateTotals();
+        }
+
+        function updateTotals() {
+            let totalPlan = 0;
+            let totalReceive = 0;
+            document.querySelectorAll('.plan-qty').forEach(el => totalPlan += parseFloat(el.innerText) || 0);
+            document.querySelectorAll('.receive-input').forEach(el => totalReceive += parseFloat(el.value) || 0);
+            
+            document.getElementById('totalPlan').innerText = totalPlan;
+            document.getElementById('totalReceive').innerText = totalReceive;
+        }
+
+        // Hàm hiển thị chi tiết các lần nhập của một Parent PO
+        function showPODetails(po) {
+            if (!po) return;
+            document.getElementById('detailPoTitle').innerText = po;
+            const body = document.getElementById('poDetailsBody');
+            body.innerHTML = '<tr><td colspan="7" class="empty-row">Đang xử lý...</td></tr>';
+            
+            // Lọc dữ liệu từ currentData (danh sách đã tải về) có cùng mã PO
+            const details = currentData.filter(item => item.po === po);
+            
+            if (details.length === 0) {
+                body.innerHTML = '<tr><td colspan="7" class="empty-row">Không tìm thấy dữ liệu nhập kho cho PO này</td></tr>';
+                document.getElementById('detailTotalCarton').innerText = '0';
+                document.getElementById('detailTotalCbm').innerText = '0.000';
+            } else {
+                let totalCarton = 0;
+                let totalCbm = 0;
+                let html = '';
+                
+                details.forEach(item => {
+                    const dDate = item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '-';
+                    totalCarton += parseFloat(item.carton || 0);
+                    totalCbm += parseFloat(item.cbm || 0);
+                    
+                    html += `
+                        <tr>
+                            <td>${dDate}</td>
+                            <td><b>${item.sku}</b></td>
+                            <td>${item.carton}</td>
+                            <td>${item.cbm || 0}</td>
+                            <td>${item.contxe || '-'}</td>
+                            <td>${item.PackinglistNo || '-'}</td>
+                            <td>${item.labour || ''}</td>
+                        </tr>`;
+                });
+                body.innerHTML = html;
+                document.getElementById('detailTotalCarton').innerText = totalCarton;
+                document.getElementById('detailTotalCbm').innerText = totalCbm.toFixed(3);
+            }
+            
+            document.getElementById('poDetailsModal').style.display = 'flex';
+        }
+
+        function loadData() {
+            const q = document.getElementById('searchInput').value;
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+
+            let url = '/api/inbound';
+            const params = new URLSearchParams({ q, start, end });
+            url += `?${params.toString()}`;
+            
+            fetch(url)
+            .then(r => {
+                if (!r.ok) {
+                    // Neu response khong OK (vd: 500), nem ra loi de .catch() xu ly
+                    return r.json().then(err => { throw new Error(err.error || `Lỗi Server: ${r.status}`) });
+                }
+                return r.json();
+            })
+            .then(data => {
+                if (!Array.isArray(data)) {
+                    // Neu du lieu tra ve khong phai la mang, bao loi
+                    throw new Error("Dữ liệu trả về không đúng định dạng (không phải là mảng).");
+                }
+
+                currentData = data;
+                const tb = document.getElementById('dataTable');
+                const plSection = document.getElementById('plSummarySection');
+                
+                tb.innerHTML = '';
+                if (data.length === 0) { 
+                    tb.innerHTML = '<tr><td colspan="10" class="empty-row">Không tìm thấy dữ liệu</td></tr>'; 
+                    if(plSection) plSection.style.display = 'none';
+                    return; 
+                }
+
+                let plStats = {}; // Bien luu thong ke Packing List
+
+                data.forEach((item, index) => {
+                    // --- Logic Tong hop Packing List ---
+                    const pl = item.PackinglistNo ? item.PackinglistNo.trim() : 'N/A';
+                    if (!plStats[pl]) plStats[pl] = { 
+                        po: new Set(), 
+                        carton: 0, 
+                        cbm: 0, 
+                        labour: new Set(),
+                        suppliers: new Set(),
+                        contxe: new Set(), // Them tap hop Cont/Xe
+                        datercv: item.datercv // Lay ngay nhap de hien thi
+                    };
+                    
+                    if(item.po) plStats[pl].po.add(item.po);
+                    const supplierName = item.name_doc || item.TENNCC || item.MANCC;
+                    if(supplierName) plStats[pl].suppliers.add(supplierName);
+                    plStats[pl].carton += parseFloat(item.carton || 0);
+                    plStats[pl].cbm += parseFloat(item.cbm || 0);
+                    if(item.labour) plStats[pl].labour.add(item.labour);
+                    if(item.contxe) plStats[pl].contxe.add(item.contxe);
+                    // -----------------------------------
+
+                    let dDate = '';
+                    if(item.datercv) {
+                        const d = new Date(item.datercv);
+                        dDate = d.toLocaleDateString('vi-VN');
+                    }
+
+                    const tr = document.createElement('tr');
+                    
+                    // Highlight xanh neu co so Cont/Xe
+                    if (item.contxe && item.contxe.trim() !== '') {
+                        tr.style.backgroundColor = '#e8f6f3';
+                    }
+
+                    tr.innerHTML = `
+                        <td>${dDate}</td>
+                        <td><b>${item.name_doc || item.MANCC}</b></td>
+                        <td><b style="color:#3498db; cursor:pointer; text-decoration:underline;" onclick="showPODetails('${item.po}')" title="Xem chi tiết nhập kho của PO này">${item.po}</b></td>
+                        <td>${item.sku || ''}</td>
+                        <td>${item.carton}</td>
+                        <td>${item.cbm || 0}</td>
+                        <td>${item.contxe || ''}</td>
+                        <td>${item.PackinglistNo || ''}</td>
+                        <td>${item.labour || ''}</td>
+                        <td><button style="padding:5px; background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer;" onclick='openModal(currentData[${index}])'>Sửa</button></td>
+                    `;
+                    tb.appendChild(tr);
+                });
+
+                // --- Xu ly du lieu cho bang tong hop Packing List ---
+                if (Object.keys(plStats).length > 0) {
+                    plSection.style.display = 'block';
+                    
+                    // Chuyen doi sang mang va sap xep theo ngay nhap giam dan (Moi nhat len dau)
+                    sortedPLData = Object.entries(plStats).sort((a, b) => {
+                        const dateA = new Date(a[1].datercv || 0);
+                        const dateB = new Date(b[1].datercv || 0);
+                        return dateB - dateA;
+                    });
+                    currentPLPage = 1; // Reset ve trang 1 khi load lai
+                    renderPLSummary();
+                } else {
+                    plSection.style.display = 'none';
+                }
+            })
+            .catch(err => {
+                console.error("Lỗi khi tải dữ liệu Inbound:", err);
+                showToast(err.message, 'error');
+                document.getElementById('dataTable').innerHTML = `<tr><td colspan="10" class="empty-row" style="color:red;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
+            });
+        }
+
+        function saveData() {
+            const id = document.getElementById('dataId').value;
+            const inboundData = {
+                id: id || null,
+                MANCC: document.getElementById('mancc').value,
+                po: document.getElementById('po').value,
+                sku: document.getElementById('sku').value,
+                carton: document.getElementById('carton').value,
+                cbm: document.getElementById('cbm').value,
+                contxe: document.getElementById('contxe').value,
+                labour: document.getElementById('labour').value,
+                PackinglistNo: document.getElementById('packinglistno').value,
+                datercv: document.getElementById('datercv').value
+            };
+
+            if (!inboundData.MANCC || !inboundData.po || !inboundData.sku || !inboundData.carton) {
+                showToast('Vui lòng nhập NCC, PO, SKU và Số Carton', 'error');
+                return;
+            }
+
+            // Luu du lieu vao bien tam
+            dataToSave = inboundData;
+
+            // Goi API de lay chi tiet BBR
+            fetch(`/api/bbr/details?parentpo=${encodeURIComponent(inboundData.po)}&sku=${encodeURIComponent(inboundData.sku)}`)
+                .then(async r => {
+                    if (!r.ok) throw new Error('Không tìm thấy dữ liệu BBR cho PO/SKU này.');
+                    return r.json();
+                })
+                .then(bbrDetails => {
+                    const confirmBody = document.getElementById('confirmTableBody');
+                    confirmBody.innerHTML = '';
+
+                    if (bbrDetails.length === 0) {
+                        // Neu khong co ke hoach, van cho phep luu nhung hien thong bao
+                        confirmBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Không tìm thấy kế hoạch trên BBR cho SKU này.</td></tr>`;
+                    } else {
+                        bbrDetails.forEach((bbrItem, index) => {
+                            const plannedQty = parseFloat(bbrItem.qty);
+                            // Tự động gán số lượng thực nhận bằng số lượng kế hoạch từ BBR
+                            const receivingQty = plannedQty; 
+
+                            confirmBody.innerHTML += `
+                                <tr>
+                                    <td>${bbrItem.po}</td>
+                                    <td class="plan-qty">${plannedQty}</td>
+                                    <td><input type="number" class="receive-input" value="${receivingQty}" oninput="updateRowStatus(this)"></td>
+                                    <td class="status-cell" style="font-weight: bold; color: #2ecc71;">Receiving</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        // Them dong tong cong
+                        confirmBody.innerHTML += `
+                            <tr>
+                                <td style="text-align:right;">Tổng cộng:</td>
+                                <td id="totalPlan">0</td>
+                                <td id="totalReceive" style="color:#d35400;">0</td>
+                                <td></td>
+                            </tr>`;
+                        
+                        // Cap nhat tong lan dau
+                        updateTotals();
+                    }
+                    
+                    document.getElementById('confirmModal').style.display = 'flex';
+                })
+                .catch(e => {
+                    // Neu co loi (vd: 404), van cho phep luu nhung hien popup canh bao
+                    const confirmBody = document.getElementById('confirmTableBody');
+                    confirmBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">${e.message}</td></tr>`;
+                    document.getElementById('confirmModal').style.display = 'flex';
+                });
+        }
+
+        function executeSave() {
+            if (!dataToSave) {
+                showToast('Không có dữ liệu để lưu', 'error');
+                return;
+            }
+
+            // CAP NHAT LAI SO LUONG TU POPUP (Neu co)
+            const totalRecvElem = document.getElementById('totalReceive');
+            if (totalRecvElem) {
+                const total = parseFloat(totalRecvElem.innerText) || 0;
+                if (total > 0) {
+                    dataToSave.carton = total;
+                    
+                    // Tinh lai CBM theo so luong thuc nhan moi
+                    const skuSel = document.getElementById('sku');
+                    const selectedOption = skuSel.options[skuSel.selectedIndex];
+                    const unitCbm = parseFloat(selectedOption.getAttribute('data-cbm')) || 0;
+                    dataToSave.cbm = (unitCbm * total).toFixed(3);
+                }
+            }
+
+            // --- THU THAP TRANG THAI BBR DE CAP NHAT ---
+            const bbrUpdates = [];
+            const rows = document.querySelectorAll('#confirmTableBody tr');
+            rows.forEach(row => {
+                // Chi xu ly cac dong co input (bo qua dong tong cong hoac dong thong bao loi)
+                const input = row.querySelector('.receive-input');
+                if (!input) return;
+                
+                const cells = row.querySelectorAll('td');
+                const childPo = cells[0].innerText; // Cot dau tien la Child PO
+                const status = cells[3].innerText;  // Cot thu 4 la Status
+                const recvQty = parseFloat(input.value) || 0;
+
+                if (status === 'Receiving' || status === 'Partial') {
+                    bbrUpdates.push({ po: childPo, item: dataToSave.sku, status: status, qty_partial: recvQty });
+                }
+            });
+            dataToSave.bbrUpdates = bbrUpdates;
+
+            fetch('/api/inbound', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(dataToSave)
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Lưu thành công!');
+                document.getElementById('confirmModal').style.display = 'none'; // Dong popup xac nhan
+                // closeModal(); // GIU LAI MODAL FORM NHAP KHO THEO YEU CAU
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+
+            dataToSave = null; // Reset bien tam
+        }
+
+        // --- LOGIC SUA PACKING LIST ---
+        function openEditPLModal(plNo, dateRcv, cont, labour) {
+            document.getElementById('editPLModal').style.display = 'flex';
+            document.getElementById('editPL_No').value = plNo;
+            document.getElementById('editPL_Display').value = plNo;
+            
+            // Format date YYYY-MM-DD for input
+            document.getElementById('editPL_Date').value = dateRcv ? dateRcv.split('T')[0] : '';
+            document.getElementById('editPL_Cont').value = cont;
+            document.getElementById('editPL_Labour').value = labour;
+        }
+
+        function saveEditPL() {
+            const plNo = document.getElementById('editPL_No').value;
+            const data = {
+                PackinglistNo: plNo,
+                datercv: document.getElementById('editPL_Date').value,
+                contxe: document.getElementById('editPL_Cont').value,
+                labour: document.getElementById('editPL_Labour').value
+            };
+
+            fetch('/api/inbound/by-packinglist', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(async res => {
+                if (!res.ok) throw new Error((await res.json()).error || 'Lỗi server');
+                showToast('Cập nhật thành công!');
+                document.getElementById('editPLModal').style.display = 'none';
+                loadData();
+            })
+            .catch(e => showToast(e.message, 'error'));
+        }
+
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadData(), 500);
+        }
+
+        // --- LOGIC IN TALLY SHEET ---
+        function toggleAllPLCheckboxes(source) {
+            document.querySelectorAll('.pl-checkbox').forEach(cb => cb.checked = source.checked);
+        }
+
+        function printTallySheet() {
+            const selectedPLs = Array.from(document.querySelectorAll('.pl-checkbox:checked')).map(cb => cb.value);
+            if (selectedPLs.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 Packing List để in!', 'error');
+                return;
+            }
+            const selectedItems = currentData.filter(item => {
+                const pl = item.PackinglistNo ? item.PackinglistNo.trim() : 'N/A';
+                return selectedPLs.includes(pl);
+            });
+            localStorage.setItem('printTallyData', JSON.stringify(selectedItems));
+            const printWindow = window.open('/printTally.html', '_blank');
+            if (!printWindow) {
+                showToast('Vui lòng cho phép trình duyệt mở cửa sổ bật lên (popup) để xem trang in!', 'error');
+            }
+        }
+
+        // --- LOGIC PHAN TRANG VA HIEN THI TONG HOP PACKING LIST ---
+        function renderPLSummary() {
+            const plBody = document.getElementById('plSummaryBody');
+            const plPagination = document.getElementById('plPagination');
+            plBody.innerHTML = '';
+            plPagination.innerHTML = '';
+
+            if (sortedPLData.length === 0) return;
+
+            // Tính toán phân trang (20 dòng mỗi trang)
+            const totalPages = Math.ceil(sortedPLData.length / rowsPerPLPage);
+            const start = (currentPLPage - 1) * rowsPerPLPage;
+            const end = start + rowsPerPLPage;
+            const pageData = sortedPLData.slice(start, end);
+
+            pageData.forEach(([key, val]) => {
+                let plDate = val.datercv ? new Date(val.datercv).toLocaleDateString('vi-VN') : '';
+                const contStr = Array.from(val.contxe).join(', ');
+                const labourStr = Array.from(val.labour).join(', ');
+                const supplierStr = Array.from(val.suppliers).join(', ');
+                const rowStyle = (contStr && contStr.trim() !== '') ? 'style="background-color: #e8f6f3;"' : '';
+
+                plBody.innerHTML += `
+                    <tr ${rowStyle}>
+                        <td><input type="checkbox" class="pl-checkbox" value="${key}"></td>
+                        <td><b>${key}</b></td>
+                        <td>${plDate}</td>
+                        <td>${supplierStr || '-'}</td>
+                        <td>${contStr || '-'}</td>
+                        <td>${Array.from(val.po).map(p => `<span style="color:#3498db; cursor:pointer; text-decoration:underline; font-weight:bold;" onclick="showPODetails('${p}')" title="Xem chi tiết">${p}</span>`).join(', ')}</td>
+                        <td>${val.carton}</td>
+                        <td>${val.cbm.toFixed(3)}</td>
+                        <td>${labourStr}</td>
+                        <td>
+                            <button onclick="openEditPLModal('${key}', '${val.datercv || ''}', '${contStr}', '${labourStr}')" style="padding:5px 10px; background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer;">Sửa</button>
+                            <button onclick="deletePL('${key}')" class="btn-delete-pl">🗑️ Xóa</button>
+                        </td>
+                    </tr>`;
+            });
+
+            // Tạo nút phân trang
+            if (totalPages > 1) {
+                for (let i = 1; i <= totalPages; i++) {
+                    plPagination.innerHTML += `<button class="page-btn ${i === currentPLPage ? 'active' : ''}" onclick="changePLPage(${i})">${i}</button>`;
+                }
+            }
+        }
+
+        function changePLPage(page) {
+            currentPLPage = page;
+            renderPLSummary();
+        }
+
+        function deletePL(plNo) {
+            if (!confirm(`Bạn có chắc chắn muốn XÓA toàn bộ dữ liệu của Packing List: ${plNo}?\nLưu ý: Hành động này sẽ xóa tất cả các dòng PO thuộc PL này.`)) return;
+
+            fetch(`/api/inbound/by-packinglist/${encodeURIComponent(plNo)}`, {
+                method: 'DELETE'
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast(`Đã xóa Packing List ${plNo}`);
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function openExportModal() {
+            // Tự động điền ngày hiện tại đang lọc vào modal xuất
+            document.getElementById('exportStartDate').value = document.getElementById('startDate').value;
+            document.getElementById('exportEndDate').value = document.getElementById('endDate').value;
+            document.getElementById('exportLabour').value = 'ALL';
+            document.getElementById('exportModal').style.display = 'flex';
+        }
+
+        function executeExport() {
+            const start = document.getElementById('exportStartDate').value;
+            const end = document.getElementById('exportEndDate').value;
+            const labourType = document.getElementById('exportLabour').value;
+
+            let url = '/api/inbound';
+            const params = new URLSearchParams();
+            if (start) params.append('start', start);
+            if (end) params.append('end', end);
+            url += `?${params.toString()}`;
+
+            showToast('Đang tải dữ liệu để xuất...', 'success');
+
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (!Array.isArray(data)) {
+                        showToast('Lỗi lấy dữ liệu export', 'error');
+                        return;
+                    }
+
+                    let filteredData = data;
+                    if (labourType !== 'ALL') {
+                        filteredData = data.filter(item => {
+                            if (!item.labour) return false;
+                            const lab = item.labour.toLowerCase();
+                            return lab.includes(labourType.toLowerCase());
+                        });
+                    }
+
+                    if (filteredData.length === 0) {
+                        showToast('Không có dữ liệu phù hợp để xuất', 'error');
+                        return;
+                    }
+
+                    // Gom nhóm theo Packing List
+                    let plStats = {};
+                    filteredData.forEach(item => {
+                        const pl = item.PackinglistNo ? item.PackinglistNo.trim() : 'N/A';
+                        if (!plStats[pl]) {
+                            plStats[pl] = {
+                                datercv: item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '',
+                                suppliers: new Set(),
+                                po: new Set(),
+                                carton: 0,
+                                cbm: 0,
+                                contxe: new Set(),
+                                labour: new Set()
+                            };
+                        }
+                        const supplierName = item.name_doc || item.MANCC || '';
+                        if (supplierName) plStats[pl].suppliers.add(supplierName);
+                        if (item.po) plStats[pl].po.add(item.po);
+                        if (item.contxe) plStats[pl].contxe.add(item.contxe);
+                        if (item.labour) plStats[pl].labour.add(item.labour);
+                        
+                        plStats[pl].carton += parseFloat(item.carton) || 0;
+                        plStats[pl].cbm += parseFloat(item.cbm) || 0;
+                    });
+
+                    const excelData = Object.keys(plStats).map(plKey => {
+                        const val = plStats[plKey];
+                        return {
+                            'Packing List No': plKey,
+                            'Ngày Nhận': val.datercv,
+                            'Nhà Cung Cấp': Array.from(val.suppliers).join(', '),
+                            'Danh sách PO': Array.from(val.po).join(', '),
+                            'Tổng Carton': val.carton,
+                            'Tổng CBM': parseFloat(val.cbm.toFixed(3)),
+                            'Cont/Xe': Array.from(val.contxe).join(', '),
+                            'Labour': Array.from(val.labour).join(', ')
+                        };
+                    });
+
+                    const ws = XLSX.utils.json_to_sheet(excelData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Inbound Data");
+                    
+                    const fileName = `Inbound_${labourType}_${start || 'All'}_to_${end || 'All'}.xlsx`;
+                    XLSX.writeFile(wb, fileName);
+
+                    showToast('Xuất Excel thành công!');
+                    document.getElementById('exportModal').style.display = 'none';
+                })
+                .catch(err => {
+                    console.error('Lỗi export', err);
+                    showToast('Lỗi xuất Excel: ' + err.message, 'error');
+                });
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

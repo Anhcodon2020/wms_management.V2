@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Scan Data - Quản Lý Kho</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .section-title { font-weight: bold; color: #2c3e50; margin: 20px 0 10px 0; display: flex; align-items: center; gap: 10px; }
+        
+        .diff-error { background-color: #ffcccc !important; color: #c0392b; font-weight: bold; }
+        .diff-ok { color: #27ae60; font-weight: bold; }
+        
+        .btn-delete-job { background-color: #e74c3c; color: white; margin-left: 5px; }
+        .btn-delete-job:hover { background-color: #c0392b; }
+        
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 12px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #34495e; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f1f1f1; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 12px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #34495e; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f1f1f1; }
+        
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; transition: 0.3s; }
+        .btn-import { background-color: #8e44ad; color: white; }
+        .btn-import:hover { background-color: #7d3c98; }
+        
+        .progress-container { display: none; margin-top: 15px; }
+        .progress-bar { width: 100%; background: #eee; height: 10px; border-radius: 5px; overflow: hidden; }
+        .progress-fill { width: 0%; height: 100%; background: #27ae60; transition: width 0.3s; }
+
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); opacity: 0; transition: 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        .toast.success { background-color: #2ecc71; }
+        .toast.error { background-color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>📑 Quản Lý Scan Data</h2>
+            <div>
+                <select id="outboundJobSelect" onchange="loadAllData()" style="padding:10px; border:1px solid #ddd; border-radius:5px; margin-right:5px; background: #fffbe6; border-color: #ffe58f;">
+                    <option value="">-- Chọn Outbound Job --</option>
+                </select>
+                <select id="palletTypeSelect" style="padding:10px; border:1px solid #ddd; border-radius:5px; margin-right:5px; background: #e6f7ff; border-color: #91d5ff;">
+                    <option value="">-- Chọn Loại Pallet --</option>
+                </select>
+                <input type="text" id="searchInput" placeholder="Tìm Job No, SSCC..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:250px;" onkeyup="searchData()">
+                <label style="font-size: 13px; margin-left: 10px; cursor: pointer;">
+                    <input type="checkbox" id="filterNoCont" onchange="loadAllData()"> Chỉ hiện Job chưa có Cont
+                </label>
+                
+                <input type="text" id="deleteJobInput" placeholder="Nhập Job No để xóa..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:150px; margin-left:10px;">
+                <button class="btn btn-delete-job" onclick="deleteScanJob()">🗑️ Xóa Job Scan</button>
+                <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📥 Import Nhiều File Excel</button>
+                <input type="file" id="fileInput" multiple hidden accept=".xlsx, .xls" onchange="processImport()">
+            </div>
+        </div>
+
+        <div id="progressArea" class="progress-container card">
+            <div id="progressText" style="margin-bottom: 5px; font-weight: bold;">Đang xử lý: 0/0 file</div>
+            <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        </div>
+
+        <div class="section-title">📊 Bảng Đối Soát SKU (Outbound vs Scanned)</div>
+        <div style="overflow-x: auto; margin-bottom: 30px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Job No</th>
+                        <th>SKU</th>
+                        <th>Kế Hoạch (Outbound)</th>
+                        <th>Đã Quét (Scanfile)</th>
+                        <th>Chênh Lệch</th>
+                        <th>Chưa Quét</th>
+                        <th>Kết Quả</th>
+                    </tr>
+                </thead>
+                <tbody id="comparisonTableBody">
+                    <tr><td colspan="6" style="text-align:center;">Đang tải dữ liệu đối soát...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section-title">📋 Chi Tiết Scan Data</div>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Job No</th>
+                        <th>SKU</th>
+                        <th>SSCC</th>
+                        <th>Qty</th>
+                        <th>Ship To</th>
+                        <th>Barcode</th>
+                        <th>Pallet</th>
+                        <th>Time Scan</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTableBody">
+                    <tr><td colspan="10" style="text-align:center; padding:20px;">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let skuRemarkMap = {}; // Lưu trữ remark từ Master Data để mapping tag_label
+
+        function loadMasterDataMap() {
+            fetch('/api/masterdata')
+            .then(r => r.json())
+            .then(data => {
+                skuRemarkMap = {};
+                data.forEach(item => { if (item.sku) skuRemarkMap[item.sku] = item.remark; });
+            })
+            .catch(err => console.error('Lỗi tải Master Data Map:', err));
+        }
+
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = 'toast', 3000);
+        }
+
+        async function processImport() {
+            const fileInput = document.getElementById('fileInput');
+            const files = fileInput.files;
+            if (files.length === 0) return;
+
+            const progressArea = document.getElementById('progressArea');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            progressArea.style.display = 'block';
+            let allData = [];
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                progressText.innerText = `Đang đọc file (${i + 1}/${files.length}): ${file.name}`;
+                
+                try {
+                    const data = await readExcel(file);
+                    allData = allData.concat(data);
+                } catch (e) {
+                    console.error("Lỗi đọc file " + file.name, e);
+                }
+                
+                const percent = ((i + 1) / files.length) * 50; // 50% dau la doc file
+                progressFill.style.width = percent + '%';
+            }
+
+            if (allData.length > 0) {
+                progressText.innerText = `Đang gửi ${allData.length} dòng lên server...`;
+                try {
+                    const res = await fetch('/api/scanfile/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(allData)
+                    });
+                    const result = await res.json();
+                    if (!res.ok) throw new Error(result.error);
+                    
+                    progressFill.style.width = '100%';
+                    showToast(result.message);
+                    loadAllData();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            }
+
+            setTimeout(() => { progressArea.style.display = 'none'; progressFill.style.width = '0%'; }, 2000);
+            fileInput.value = '';
+        }
+
+        function deleteScanJob() {
+            let jobno = document.getElementById('deleteJobInput').value.trim();
+            if (!jobno) jobno = document.getElementById('outboundJobSelect').value;
+
+            if (!jobno) {
+                showToast('Vui lòng nhập hoặc chọn một Job No để xóa!', 'error');
+                return;
+            }
+            if (!confirm(`Bạn có chắc muốn XÓA TOÀN BỘ dữ liệu Scan của Job: ${jobno}?`)) return;
+
+            fetch(`/api/scanfile/job/${encodeURIComponent(jobno)}`, { method: 'DELETE' })
+            .then(async r => {
+                const res = await r.json();
+                if (!r.ok) throw new Error(res.error);
+                showToast(res.message);
+                document.getElementById('deleteJobInput').value = '';
+                loadAllData();
+            })
+            .catch(e => showToast(e.message, 'error'));
+        }
+
+        function readExcel(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    // Sử dụng header: 1 để lấy dữ liệu dạng mảng (truy cập theo index A=0, B=1, C=2...)
+                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    
+                    // Lay Job No da chon tu dropdown
+                    const selectedJobNo = document.getElementById('outboundJobSelect').value;
+                    const selectedPalletType = document.getElementById('palletTypeSelect').value;
+
+                    // Mapping dữ liệu theo chỉ số cột (B=1, C=2, D=3, F=5, H=7...)
+                    // Đọc từ dòng đầu tiên vì file không có tiêu đề
+                    const mappedData = rows.map(row => {
+                        const sku = row[14] ? String(row[14]).trim() : '';
+                        const masterDelivery = row[3] ? String(row[3]).trim() : '';
+                        const today = new Date().toISOString().split('T')[0]; // Lấy ngày hiện tại YYYY-MM-DD
+
+                        return {
+                            release_key: row[1] || '',
+                            sscc: row[2] || '',
+                            master_delivery: masterDelivery,
+                            qty: 1, // Luôn mặc định là 1 theo yêu cầu
+                            master_ctl: row[5] || '',
+                            master_st_company: '',
+                            master_add1: row[7] || '',
+                            master_add2: row[8] || '',
+                            master_add3: row[9] || '',
+                            master_add4: row[10] || '',
+                            ship_to: row[11] || '',
+                            st_zip: row[12] || '',
+                            barcode: row[13] || '',
+                            sku: sku,
+                            jobno: selectedJobNo,
+                            jobno_type: selectedJobNo + "_" + masterDelivery.substring(0, 3),
+                            tag_label: skuRemarkMap[sku] === 'Tag_label' ? 'Y' : 'N',
+                            pallet: '',
+                            time_scan: today,
+                            pallet_type: selectedPalletType,
+                            jobscan: '',
+                            status: '',
+                            userscan: '',
+                            finish: '',
+                            confirm: ''
+                        };
+                    });
+                    resolve(mappedData);
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // Load danh sach Job No chua co Cont tu Outbound
+        function loadOutboundJobs() {
+            fetch('/api/outbound/dropdown/jobs-no-cont')
+            .then(r => r.json())
+            .then(data => {
+                const sel = document.getElementById('outboundJobSelect');
+                // Giu lai option dau tien
+                sel.innerHTML = '<option value="">-- Chọn Outbound Job --</option>';
+                data.forEach(item => {
+                    if (item.jobno) {
+                        sel.innerHTML += `<option value="${item.jobno}">${item.jobno}</option>`;
+                    }
+                });
+            })
+            .catch(err => console.error('Lỗi tải Outbound Jobs:', err));
+        }
+
+        // Load danh sach Loai Pallet tu Database (Sử dụng pallet_size)
+        function loadPalletTypes() {
+            fetch('/api/pallet-types')
+            .then(r => r.json())
+            .then(data => {
+                const sel = document.getElementById('palletTypeSelect');
+                sel.innerHTML = '<option value="">-- Chọn Loại Pallet --</option>';
+                data.forEach(item => {
+                    const label = item.pallet_size || item.name || item.id;
+                    sel.innerHTML += `<option value="${label}">${label}</option>`;
+                });
+            })
+            .catch(err => console.error('Lỗi tải Pallet Types:', err));
+        }
+
+        function loadData() {
+            const q = document.getElementById('searchInput').value;
+            const jobno = document.getElementById('outboundJobSelect').value;
+            const noCont = document.getElementById('filterNoCont').checked;
+
+            const params = new URLSearchParams({ q });
+            if (jobno) params.append('jobno', jobno);
+            if (noCont) params.append('noCont', 'true');
+
+            fetch(`/api/scanfile?${params.toString()}`)
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('dataTableBody');
+                tbody.innerHTML = data.map(item => `
+                    <tr>
+                        <td>${item.id}</td>
+                        <td><b>${item.jobno}</b></td>
+                        <td>${item.sku}</td>
+                        <td>${item.sscc}</td>
+                        <td>${item.qty}</td>
+                        <td>${item.ship_to}</td>
+                        <td>${item.barcode}</td>
+                        <td>${item.pallet}</td>
+                        <td>${item.time_scan ? new Date(item.time_scan).toLocaleDateString('vi-VN') : '-'}</td>
+                        <td>${item.status || '-'}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="10" style="text-align:center;">Không có dữ liệu</td></tr>';
+            });
+        }
+
+        function loadComparison() {
+            fetch('/api/scanfile/comparison')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('comparisonTableBody');
+                tbody.innerHTML = data.map(item => {
+                    const diff = item.scanned - item.planned;
+                    const remaining = Math.max(0, item.planned - item.scanned);
+                    const isMatch = item.scanned === item.planned;
+                    const rowClass = isMatch ? '' : 'diff-error';
+                    
+                    return `
+                        <tr class="${rowClass}">
+                            <td><b>${item.jobno}</b></td>
+                            <td>${item.sku}</td>
+                            <td>${item.planned}</td>
+                            <td>${item.scanned}</td>
+                            <td>${diff > 0 ? '+' + diff : diff}</td>
+                            <td style="font-weight: bold; color: ${remaining > 0 ? '#e67e22' : '#27ae60'};">${remaining}</td>
+                            <td>${isMatch ? '<span class="diff-ok">✅ OK</span>' : '❌ SAI LỆCH'}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="6" style="text-align:center;">Không có dữ liệu đối soát</td></tr>';
+            });
+        }
+
+        function loadAllData() {
+            loadData();
+            loadComparison();
+        }
+
+        let searchTimeout;
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(loadAllData, 500);
+        }
+
+        loadOutboundJobs();
+        loadPalletTypes();
+        loadMasterDataMap();
+        loadAllData();
+    </script>
+</body>
+</html>

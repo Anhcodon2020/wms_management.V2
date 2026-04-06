@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu Quản Lý Dự Án</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 400px; }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #666; margin-bottom: 30px; }
+        .btn { display: block; width: 100%; padding: 15px; margin: 10px 0; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; text-decoration: none; transition: 0.3s; box-sizing: border-box; }
+        .btn-primary { background-color: #4CAF50; color: white; }
+        .btn-primary:hover { background-color: #45a049; }
+        .btn-secondary { background-color: #008CBA; color: white; }
+        .btn-secondary:hover { background-color: #007bb5; }
+        .status { margin-top: 20px; font-size: 14px; color: #888; border-top: 1px solid #eee; padding-top: 20px; }
+        input { padding: 10px; width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🚀 Bảng Điều Khiển</h1>
+        <p>Server đang khởi động...</p>
+
+        <div>
+            <label for="port">Cổng (Port): </label>
+            <input type="number" id="port" value="3001" oninput="updateLink()">
+        </div>
+
+        <a href="http://localhost:3001" id="mainLink" target="_blank" class="btn btn-primary">🌐 Mở Trang Chủ (Localhost)</a>
+        <a href="http://localhost:3001/supplier" id="supplierLink" target="_blank" class="btn btn-secondary" style="background-color: #e67e22;">🏭 Quản lý Nhà Cung Cấp</a>
+        <a href="http://localhost:3001/masterdata" id="masterDataLink" target="_blank" class="btn btn-secondary" style="background-color: #8e44ad;">📦 Quản lý Master Data</a>
+        <a href="https://console.aiven.io/" target="_blank" class="btn btn-secondary">🗄️ Quản lý Database (Aiven)</a>
+        
+        <div class="status">
+            Nếu trang web không tải được, hãy kiểm tra cửa sổ màu đen (CMD) xem có lỗi không.
+        </div>
+    </div>
+
+    <script>
+        // Cap nhat link HTML truc tiep thay vi dung window.open (tranh loi bao mat file://)
+        function updateLink() {
+            const port = document.getElementById('port').value;
+            const link = document.getElementById('mainLink');
+            link.href = `http://localhost:${port}`;
+            
+            const supplierLink = document.getElementById('supplierLink');
+            supplierLink.href = `http://localhost:${port}/supplier`;
+
+            const masterDataLink = document.getElementById('masterDataLink');
+            masterDataLink.href = `http://localhost:${port}/masterdata`;
+        }
+    </script>
+</body>
+</html>

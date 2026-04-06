@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Xuất Kho (Outbound) - WMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Thu vien Xuat Excel (SheetJS) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 13px; }
+        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #e67e22; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f9f9f9; }
+        .empty-row { text-align: center; color: #888; padding: 20px; }
+
+        /* Modal & Form */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 999; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; width: 850px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-size: 13px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        
+        .btn-submit { width: 100%; padding: 12px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        .btn-submit:hover { background: #d35400; }
+        .btn-cancel { width: 100%; padding: 10px; background: transparent; color: #7f8c8d; border: none; margin-top: 5px; cursor: pointer; }
+        
+        /* Style cho nút Sửa mới */
+        .btn-edit { 
+            padding: 6px 15px; 
+            background: linear-gradient(135deg, #f39c12, #e67e22); 
+            color: white; 
+            border: none; 
+            border-radius: 20px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            font-size: 12px; 
+            transition: 0.3s; 
+            box-shadow: 0 2px 5px rgba(230, 126, 34, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-edit:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 10px rgba(230, 126, 34, 0.4); 
+            background: linear-gradient(135deg, #e67e22, #d35400); 
+        }
+
+        /* Style cho nút Đổi tên */
+        .btn-rename { 
+            padding: 6px 15px; 
+            background: linear-gradient(135deg, #3498db, #2980b9); 
+            color: white; 
+            border: none; 
+            border-radius: 20px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            font-size: 11px; 
+            transition: 0.3s; 
+            box-shadow: 0 2px 5px rgba(52, 152, 219, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-rename:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 10px rgba(52, 152, 219, 0.4); 
+            background: linear-gradient(135deg, #2980b9, #1f6391); 
+        }
+
+        /* Style cho nút Xóa */
+        .btn-delete-action { 
+            padding: 6px 15px; 
+            background: linear-gradient(135deg, #e74c3c, #c0392b); 
+            color: white; 
+            border: none; 
+            border-radius: 20px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            font-size: 11px; 
+            transition: 0.3s; 
+            box-shadow: 0 2px 5px rgba(231, 76, 60, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-delete-action:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 10px rgba(231, 76, 60, 0.4); 
+            background: linear-gradient(135deg, #c0392b, #a93226); 
+        }
+
+        /* Toast */
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 16px; opacity: 0; transition: opacity 0.5s, bottom 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        .toast.success { background-color: #2ecc71; }
+        .toast.error { background-color: #e74c3c; }
+
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; color: white; }
+        .bg-blue { background-color: #3498db; }
+        .bg-gray { background-color: #95a5a6; }
+
+        /* Style cho Summary Tabs */
+        .summary-section { margin-bottom: 30px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 4px solid #e67e22; }
+        .tabs { display: flex; gap: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .tab-btn { padding: 8px 20px; border: none; background: #f1f1f1; cursor: pointer; border-radius: 4px; font-weight: 600; color: #666; transition: 0.3s; }
+        .tab-btn.active { background: #e67e22; color: white; }
+        .tab-btn:hover:not(.active) { background: #ddd; }
+        .summary-table th { background-color: #34495e; }
+        .summary-title { font-weight: bold; color: #2c3e50; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+
+        /* Style cho trang in Picking List */
+        @media print {
+            body > * { display: none !important; }
+            #printPickingSection, #printCLPSection { display: block !important; position: static !important; width: 100%; height: auto; }
+            #printPickingSection *, #printCLPSection * { visibility: visible; }
+            body { margin: 0; padding: 0; }
+            #printCLPSection { margin: 0; padding: 0; }
+            @page portrait_page { size: A4 portrait; margin: 10mm; }
+            .picking-page { page: portrait_page; page-break-after: always; position: relative; width: 100%; min-height: 277mm; box-sizing: border-box; padding-top: 5mm; } 
+            .picking-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            .picking-table th, .picking-table td { border: 1px solid black; padding: 5px; text-align: left; }
+            .picking-header { border-bottom: 3px double #000; margin-bottom: 20px; padding-bottom: 10px; }
+            .fdc-group-title { background-color: #eee; font-weight: bold; padding: 5px; margin-top: 15px; border: 1px solid #000; }
+            .picking-footer { position: absolute; bottom: 10mm; left: 0; font-size: 13px; font-weight: bold; border-top: 1px solid #ccc; width: 100%; padding-top: 5px; }
+            .picking-title-box { display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 10px; }
+
+            /* Style riêng cho CLP Landscape */
+            @page landscape_page { size: A4 landscape; margin: 5mm 4mm 7mm 4mm; }
+            .clp-page { 
+                page: landscape_page; 
+                page-break-after: always; 
+                font-family: Arial, sans-serif; 
+                color: #000; 
+                width: 100%; 
+                min-height: 183mm; 
+                max-height: 183mm; 
+                padding: 4mm 5mm 6mm; 
+                display: flex; 
+                flex-direction: column; 
+                box-sizing: border-box; 
+                gap: 6px; 
+                overflow: hidden; 
+            }
+            .clp-header { display: flex; align-items: center; border-bottom: 3px double #000; padding-bottom: 6px; }
+            .clp-logo { width: 130px; }
+            .clp-title-main { flex: 1; text-align: center; }
+            .clp-title-main h1 { margin: 0; font-size: 27px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
+            .clp-info-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 6px; font-size: 12px; border-bottom: 2px solid #000; padding-bottom: 6px; }
+            .clp-body { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1; }
+            .clp-side { width: 100%; }
+            .clp-table { width: 100%; border-collapse: collapse; table-layout: fixed; page-break-inside: avoid; }
+            .clp-table th, .clp-table td { border: 1px solid #000; padding: 2px 3px; font-size: 11px; text-align: center; height: 24px; line-height: 1.2; overflow: hidden; }
+            .clp-table th:nth-child(1) { width: 14%; }
+            .clp-table th:nth-child(2) { width: 30%; }
+            .clp-table th:nth-child(3) { width: 12%; }
+            .clp-table th:nth-child(4) { width: 44%; }
+            .clp-table th { background: #f5f5f5; }
+            .pallet-type-cells { display: flex; justify-content: center; gap: 4px; }
+            .check-box { border: 1px solid #000; width: 20px; height: 20px; display: inline-block; font-size: 10px; line-height: 20px; font-weight: bold; }
+            .clp-footer { margin-top: 6px; padding-top: 10px; display: flex; gap: 20px; align-items: flex-start; border-top: 2px solid #000; page-break-inside: avoid; }
+            .loose-table { width: 50%; border-collapse: collapse; }
+            .loose-table th, .loose-table td { border: 1px solid #000; padding: 6px; font-size: 11px; text-align: center; height: 26px; }
+            .clp-sign { flex: 1; text-align: center; font-size: 12px; font-weight: bold; }
+        }
+        #printPickingSection, #printCLPSection { display: none; font-family: 'Times New Roman', serif; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>Quản Lý Xuất Kho (Outbound)</h2>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <!-- Loc theo Ngay Stuffing -->
+                <input type="date" id="startDate" title="Từ ngày Stuffing" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                <span style="color:#666">-</span>
+                <input type="date" id="endDate" title="Đến ngày Stuffing" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                
+                <input type="text" id="searchInput" placeholder="Tìm Job, RSL, PO, SKU..." onkeyup="searchData()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 200px;">
+                
+                <button onclick="loadData()" style="padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">🔍 Lọc</button>
+                <button onclick="exportExcel()" style="padding: 10px 15px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer;">📤 Excel</button>
+                <button onclick="printCLP()" style="padding: 10px 15px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">📋 In CLP</button>
+                <button onclick="printPickingList()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer;">🖨️ In Picking List</button>
+            </div>
+        </div>
+
+        <!-- Bang Tong Hop Theo JobNo -->
+        <div class="summary-section">
+            <div class="summary-title">📊 Tổng Hợp Theo Job No</div>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchSummaryTab('all', event)">Tất cả</button>
+                <button class="tab-btn" onclick="switchSummaryTab('hasCont', event)">Đã có số cont</button>
+                <button class="tab-btn" onclick="switchSummaryTab('noCont', event)">Chưa có số cont</button>
+            </div>
+            <div style="overflow-x: auto; margin-top: 15px;">
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 30px;"><input type="checkbox" id="selectAllJobs" onchange="toggleAllJobCheckboxes(this)"></th>
+                            <th>Job No</th>
+                            <th>Ngày Nhận (Rcv)</th>
+                            <th>Số Cont</th>
+                            <th>Ngày Đóng Hàng</th>
+                            <th>Tổng Carton</th>
+                            <th>Tổng CBM</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryTableBody">
+                        <tr><td colspan="8" class="empty-row">Đang tính toán dữ liệu...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="summary-title">📋 Chi Tiết Hàng Hóa</div>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Job No</th>
+                        <th>RSL</th>
+                        <th>FDC</th>
+                        <th>Child PO / Parent PO</th>
+                        <th>SKU</th>
+                        <th>Carton</th>
+                        <th>CBM</th>
+                        <th>Cont / Seal</th>
+                        <th>Date Stuffing</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTable">
+                    <tr><td colspan="10" class="empty-row">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Stuffing (Cap nhat Cont/Seal theo Job) -->
+    <div id="stuffingModal" class="modal">
+        <div class="modal-content" style="width: 450px;">
+            <div class="modal-header">Cập Nhật Thông Tin Đóng Hàng</div>
+            <div style="margin-bottom: 15px; padding: 10px; background: #fef5e7; border-left: 4px solid #e67e22; font-weight: bold;">
+                Job No: <span id="stuffJobNo"></span>
+            </div>
+            <div class="form-group">
+                <label>Container No (ISO 6346)</label>
+                <input type="text" id="stuffCont" placeholder="VD: CSQU3054383" oninput="this.value = this.value.toUpperCase(); validateISOUI()">
+                <div id="contFeedback" style="font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
+            </div>
+            <div class="form-group"><label>Seal No</label><input type="text" id="stuffSeal"></div>
+            <div class="form-group"><label>Date Stuffing</label><input type="date" id="stuffDate"></div>
+            
+            <button class="btn-submit" id="btnSaveStuffing" onclick="saveStuffingData()">Cập Nhật Thông Tin</button>
+            <button class="btn-cancel" onclick="document.getElementById('stuffingModal').style.display='none'">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Đổi Tên Job -->
+    <div id="renameModal" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">🔄 Đổi Tên Job No</div>
+            <div class="form-group">
+                <label>Job No hiện tại</label>
+                <input type="text" id="oldJobNoDisplay" readonly style="background-color: #f8f9fa; font-weight: bold; color: #7f8c8d; border: 1px solid #ddd;">
+            </div>
+            <div class="form-group">
+                <label>Tên Job mới</label>
+                <input type="text" id="newJobNoInput" placeholder="Nhập tên mới..." style="border: 2px solid #3498db; outline: none;">
+            </div>
+            <button class="btn-submit" style="background: linear-gradient(135deg, #3498db, #2980b9);" onclick="submitRename()">Cập Nhật Ngay</button>
+            <button class="btn-cancel" onclick="document.getElementById('renameModal').style.display='none'">Hủy bỏ</button>
+        </div>
+    </div>
+
+    <!-- Modal Form -->
+    <div id="dataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Thông Tin Xuất Kho</div>
+            <input type="hidden" id="dataId">
+            
+            <!-- Nhom thong tin lenh xuat -->
+            <div style="margin-bottom: 10px; font-weight: bold; color: #e67e22; border-bottom: 1px solid #eee; padding-bottom: 5px;">1. Thông Tin Lệnh Xuất</div>
+            <div class="form-grid">
+                <div class="form-group"><label>Job No (*)</label><input type="text" id="jobno"></div>
+                <div class="form-group"><label>RSL (*)</label><input type="text" id="rsl"></div>
+                <div class="form-group"><label>FDC (*)</label><input type="text" id="fdc"></div>
+                <div class="form-group"><label>Date Rcv (Ngày nhận lệnh)</label><input type="date" id="datercv"></div>
+            </div>
+
+            <!-- Nhom thong tin hang hoa -->
+            <div style="margin-bottom: 10px; font-weight: bold; color: #3498db; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 15px;">2. Thông Tin Hàng Hóa</div>
+            <div class="form-grid">
+                <div class="form-group"><label>Child PO (*)</label><input type="text" id="childpo"></div>
+                <div class="form-group"><label>Parent PO</label><input type="text" id="parentpo"></div>
+                <div class="form-group"><label>SKU (*)</label><input type="text" id="sku"></div>
+                
+                <div class="form-group"><label>Số Carton (*)</label><input type="number" id="carton"></div>
+                <div class="form-group"><label>CBM</label><input type="number" step="0.001" id="cbm"></div>
+                <div class="form-group"><label>LCT (Vị trí)</label><input type="text" id="lct"></div>
+                
+                <div class="form-group"><label>Loose Carton</label>
+                    <select id="looscarton">
+                        <option value="N">Không (N)</option>
+                        <option value="Y">Có (Y)</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Loại Pallet</label><input type="text" id="kindpallet"></div>
+            </div>
+
+            <!-- Nhom thong tin container -->
+            <div style="margin-bottom: 10px; font-weight: bold; color: #27ae60; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 15px;">3. Thông Tin Container & Stuffing</div>
+            <div class="form-grid">
+                <div class="form-group"><label>Container No</label><input type="text" id="container"></div>
+                <div class="form-group"><label>Seal No</label><input type="text" id="seal"></div>
+                <div class="form-group"><label>Date Stuffing</label><input type="date" id="datestuff"></div>
+                <div class="form-group" style="grid-column: span 3;"><label>Ghi Chú (Remark)</label><input type="text" id="remark"></div>
+            </div>
+            
+            <button class="btn-submit" onclick="saveData()">Lưu Thông Tin</button>
+            <button class="btn-cancel" onclick="closeModal()">Đóng</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"><span id="toast-msg">Thông báo</span></div>
+
+    <!-- Khu vuc in Picking List -->
+    <div id="printPickingSection"></div>
+    <!-- Khu vuc in CLP -->
+    <div id="printCLPSection"></div>
+
+    <script>
+        let searchTimeout;
+        let currentData = [];
+        let currentSummaryTab = 'all';
+
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerHTML = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = t.className.replace('show', ''), 3000);
+        }
+
+        function openModal(editData = null) {
+            document.getElementById('dataModal').style.display = 'flex';
+            if (editData) {
+                document.getElementById('dataId').value = editData.id;
+                document.getElementById('jobno').value = editData.jobno;
+                document.getElementById('rsl').value = editData.rsl;
+                document.getElementById('fdc').value = editData.fdc;
+                document.getElementById('datercv').value = formatDateVal(editData.datercv);
+                
+                document.getElementById('childpo').value = editData.childpo;
+                document.getElementById('parentpo').value = editData.parentpo;
+                document.getElementById('sku').value = editData.sku;
+                document.getElementById('carton').value = editData.carton;
+                document.getElementById('cbm').value = editData.cbm;
+                document.getElementById('lct').value = editData.lct;
+                document.getElementById('looscarton').value = editData.looscarton || 'N';
+                document.getElementById('kindpallet').value = editData.kindpallet;
+
+                document.getElementById('container').value = editData.container;
+                document.getElementById('seal').value = editData.seal;
+                document.getElementById('datestuff').value = formatDateVal(editData.datestuff);
+                document.getElementById('remark').value = editData.remark;
+            } else {
+                document.querySelectorAll('#dataModal input').forEach(i => i.value = '');
+                document.getElementById('dataId').value = '';
+                document.getElementById('looscarton').value = 'N';
+                document.getElementById('datercv').value = new Date().toISOString().split('T')[0]; // Mac dinh hom nay
+            }
+        }
+        function closeModal() { document.getElementById('dataModal').style.display = 'none'; }
+
+        function formatDateVal(dateStr) {
+            if (!dateStr) return '';
+            return dateStr.split('T')[0];
+        }
+
+        // Ham load du lieu tu Server
+        function loadData() {
+            const q = document.getElementById('searchInput').value;
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+
+            // Gia su API Outbound da duoc tao (tuong tu nhu API Inbound)
+            let url = '/api/outbound';
+            const params = new URLSearchParams();
+            if (q) params.append('q', q);
+            if (start) params.append('start', start);
+            if (end) params.append('end', end);
+            
+            if (Array.from(params).length > 0) url += `?${params.toString()}`;
+            
+            fetch(url)
+            .then(r => {
+                if (!r.ok) {
+                    // Neu API chua co, tra ve mang rong de khong loi giao dien
+                    if(r.status === 404) return []; 
+                    throw new Error('Lỗi tải dữ liệu');
+                }
+                return r.json();
+            })
+            .then(data => {
+                currentData = data;
+                renderSummary(); // Cap nhat bang tong hop
+                renderDetailedTable(); // Logic render bảng chi tiết đã được tách riêng
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('dataTable').innerHTML = `<tr><td colspan="10" class="empty-row" style="color:red">Lỗi kết nối: ${err.message}</td></tr>`;
+            });
+        }
+
+        function renderDetailedTable() {
+            const tb = document.getElementById('dataTable');
+            tb.innerHTML = '';
+            
+            if (!currentData || currentData.length === 0) { 
+                tb.innerHTML = '<tr><td colspan="10" class="empty-row">Không tìm thấy dữ liệu</td></tr>'; 
+                return; 
+            }
+
+            currentData.forEach((item, index) => {
+                // Lọc dữ liệu chi tiết dựa trên Tab đang chọn
+                const hasCont = item.container && item.container.trim() !== '';
+                if (currentSummaryTab === 'hasCont' && !hasCont) return;
+                if (currentSummaryTab === 'noCont' && hasCont) return;
+
+                const dStuff = item.datestuff ? new Date(item.datestuff).toLocaleDateString('vi-VN') : '-';
+                const parentInfo = item.parentpo ? `<br><span style="font-size:11px; color:#666;">P: ${item.parentpo}</span>` : '';
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><b style="color:#e67e22; cursor:pointer; text-decoration:underline;" onclick="openStuffingModal('${item.jobno}')">${item.jobno}</b></td>
+                    <td>${item.rsl}</td>
+                    <td>${item.fdc}</td>
+                    <td>${item.childpo} ${parentInfo}</td>
+                    <td>${item.sku}</td>
+                    <td style="font-weight:bold;">${item.carton}</td>
+                    <td>${item.cbm || '-'}</td>
+                    <td>
+                        <div>${item.container || '-'}</div>
+                        <div style="font-size:11px; color:#666;">${item.seal || ''}</div>
+                    </td>
+                    <td>${dStuff}</td>
+                    <td><button class="btn-edit" onclick='openModal(currentData[${index}])'>✏️ Sửa</button></td>
+                `;
+                tb.appendChild(tr);
+            });
+            
+            if (tb.innerHTML === '') {
+                tb.innerHTML = '<tr><td colspan="10" class="empty-row">Không có dữ liệu phù hợp với bộ lọc này</td></tr>';
+            }
+        }
+
+        function toggleAllJobCheckboxes(source) {
+            document.querySelectorAll('.job-checkbox').forEach(cb => cb.checked = source.checked);
+        }
+
+        // Logic chuyen doi Tab Summary
+        function switchSummaryTab(tab, event) {
+            currentSummaryTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            renderSummary();
+            renderDetailedTable(); // Cập nhật lại bảng chi tiết khi chuyển Tab
+        }
+
+        // Render bang tong hop
+        function renderSummary() {
+            if (!currentData || currentData.length === 0) {
+                document.getElementById('summaryTableBody').innerHTML = '<tr><td colspan="7" class="empty-row">Không có dữ liệu</td></tr>';
+                return;
+            }
+
+            // Group du lieu theo Job No
+            const jobs = {};
+            currentData.forEach(item => {
+                const j = item.jobno;
+                if (!jobs[j]) {
+                    jobs[j] = { 
+                        jobno: j, 
+                        containers: new Set(), 
+                        dates: new Set(), 
+                        rcv_dates: new Set(),
+                        sort_date: item.datercv ? new Date(item.datercv) : new Date(0),
+                        total_carton: 0, 
+                        total_cbm: 0 
+                    };
+                }
+                if (item.container) jobs[j].containers.add(item.container);
+                if (item.datestuff) jobs[j].dates.add(new Date(item.datestuff).toLocaleDateString('vi-VN'));
+                if (item.datercv) jobs[j].rcv_dates.add(new Date(item.datercv).toLocaleDateString('vi-VN'));
+                
+                jobs[j].total_carton += parseFloat(item.carton || 0);
+                jobs[j].total_cbm += parseFloat(item.cbm || 0);
+            });
+
+            // Chuyen sang mang va Sap xep: Ngay nhap (moi nhat) -> Job No
+            const sortedJobs = Object.values(jobs).sort((a, b) => {
+                if (b.sort_date - a.sort_date !== 0) return b.sort_date - a.sort_date;
+                return a.jobno.localeCompare(b.jobno);
+            });
+
+            const tbody = document.getElementById('summaryTableBody');
+            tbody.innerHTML = '';
+
+            sortedJobs.forEach(job => {
+                const contStr = Array.from(job.containers).join(', ');
+                const dateStr = Array.from(job.dates).join(', ');
+                const rcvStr = Array.from(job.rcv_dates).join(', ');
+                const hasCont = contStr.trim() !== '';
+
+                if (currentSummaryTab === 'hasCont' && !hasCont) return;
+                if (currentSummaryTab === 'noCont' && hasCont) return;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td><input type="checkbox" class="job-checkbox" value="${job.jobno}"></td>
+                        <td><b style="color:#e67e22; cursor:pointer; text-decoration:underline;" onclick="openStuffingModal('${job.jobno}')">${job.jobno}</b></td>
+                        <td>${rcvStr || '-'}</td>
+                        <td>${contStr || '<span style="color:#e74c3c; font-style:italic;">Chưa có</span>'}</td>
+                        <td>${dateStr || '-'}</td>
+                        <td style="font-weight:bold; color:#2c3e50;">${job.total_carton}</td>
+                        <td style="color:#27ae60; font-weight:bold;">${job.total_cbm.toFixed(3)}</td>
+                        <td>
+                            <button onclick="renameJob('${job.jobno}')" class="btn-rename">🔄 Đổi tên</button>
+                            <button onclick="deleteJob('${job.jobno}')" class="btn-delete-action" style="margin-left:5px;">🗑️ Xóa</button>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        // --- CHỨC NĂNG MỚI: ĐỔI TÊN VÀ XÓA JOB ---
+        function renameJob(oldJobNo) {
+            document.getElementById('renameModal').style.display = 'flex';
+            document.getElementById('oldJobNoDisplay').value = oldJobNo;
+            document.getElementById('newJobNoInput').value = oldJobNo;
+            document.getElementById('newJobNoInput').focus();
+            document.getElementById('newJobNoInput').select();
+        }
+
+        function submitRename() {
+            const oldJobNo = document.getElementById('oldJobNoDisplay').value;
+            const newJobNo = document.getElementById('newJobNoInput').value;
+            
+            if (!newJobNo || newJobNo === oldJobNo) {
+                document.getElementById('renameModal').style.display = 'none';
+                return;
+            }
+
+            fetch('/api/outbound/rename-job', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ oldJobNo, newJobNo })
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast(`Đã đổi tên Job thành ${newJobNo}`);
+                document.getElementById('renameModal').style.display = 'none';
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function deleteJob(jobNo) {
+            if (!confirm(`Bạn có chắc muốn XÓA TOÀN BỘ dữ liệu của Job: ${jobNo}?\nHành động này không thể hoàn tác!`)) return;
+
+            fetch(`/api/outbound/job/${encodeURIComponent(jobNo)}`, {
+                method: 'DELETE'
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast(`Đã xóa thành công Job ${jobNo}`);
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        // --- LOGIC IN PICKING LIST ---
+        function mapChipboardName(val) {
+            if (!val) return '-';
+            const s = val.toString();
+            if (s.includes('1910')) return 'chipboard 1.9';
+            if (s.includes('1210')) return 'chipboard 1.2';
+            if (s.includes('1610')) return 'chipboard 1.6';
+            return s;
+        }
+
+        function printPickingList() {
+            const selectedJobs = Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+            if (selectedJobs.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 Job để in!', 'error');
+                return;
+            }
+
+            // Chuẩn bị dữ liệu để gửi sang trang in
+            const dataToPrint = selectedJobs.map(jobNo => {
+                return {
+                    jobNo: jobNo,
+                    items: currentData.filter(d => d.jobno === jobNo)
+                };
+            });
+
+            localStorage.setItem('printPickingData', JSON.stringify(dataToPrint));
+            
+            // Mở trang in trong cửa sổ mới
+            const printWindow = window.open('/printpicking.html', '_blank');
+            if (!printWindow) {
+                showToast('Vui lòng cho phép trình duyệt mở cửa sổ bật lên (popup) để xem trang in!', 'error');
+            }
+        }
+
+        // --- LOGIC IN CLP (CONTAINER STUFFING DETAIL) ---
+        async function printCLP() {
+            const selectedJobs = Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+            if (selectedJobs.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 Job để in CLP!', 'error');
+                return;
+            }
+
+            // Lấy tổng qty pallet loose từ scanfile thông qua API đã có
+            let scannedLooseMap = {};
+            try {
+                const resLoose = await fetch(`/api/scanfile/loose-qty?jobs=${selectedJobs.map(encodeURIComponent).join(',')}`);
+                if (resLoose.ok) {
+                    scannedLooseMap = await resLoose.json();
+                }
+            } catch (err) {
+                console.warn('Không lấy được dữ liệu loose từ scanfile:', err);
+            }
+
+            // Lấy chi tiết từng dòng quét loose từ scanfile để hiển thị trong bảng chi tiết
+            let scannedDetailsMap = {};
+            for (const jobNo of selectedJobs) {
+                try {
+                    const resDetails = await fetch(`/api/scanfile?jobno=${encodeURIComponent(jobNo)}&pallet_type=loose`);
+                    if (resDetails.ok) {
+                        scannedDetailsMap[jobNo] = await resDetails.json();
+                    }
+                } catch (err) { console.warn(`Lỗi lấy chi tiết scan cho ${jobNo}:`, err); }
+            }
+
+            // Lưu dữ liệu vào localStorage để trang printCLP.html có thể đọc
+            const dataToPrint = selectedJobs.map(jobNo => {
+                return {
+                    jobNo: jobNo,
+                    items: currentData.filter(d => d.jobno === jobNo),
+                    scannedLooseQty: scannedLooseMap[jobNo] || 0,
+                    scannedLooseItems: scannedDetailsMap[jobNo] || [] // Dữ liệu thực tế từ scanfile
+                };
+            });
+
+            localStorage.setItem('printCLPData', JSON.stringify(dataToPrint));
+            
+            // Mở trang in trong cửa sổ mới
+            const printWindow = window.open('/printCLP.html', '_blank');
+            if (!printWindow) {
+                showToast('Vui lòng cho phép trình duyệt mở cửa sổ bật lên (popup) để xem trang in!', 'error');
+            }
+        }
+
+        // --- LOGIC MOI: STUFFING MODAL & ISO VALIDATION ---
+        function openStuffingModal(jobno) {
+            document.getElementById('stuffingModal').style.display = 'flex';
+            document.getElementById('stuffJobNo').innerText = jobno;
+            
+            const jobData = currentData.find(d => d.jobno === jobno);
+            if (jobData) {
+                document.getElementById('stuffCont').value = jobData.container || '';
+                document.getElementById('stuffSeal').value = jobData.seal || '';
+                document.getElementById('stuffDate').value = formatDateVal(jobData.datestuff);
+                validateISOUI();
+            }
+        }
+
+        function isISO6346Valid(cont) {
+            if (!cont || cont.length !== 11) return false;
+            cont = cont.toUpperCase();
+            if (!/^[A-Z]{4}\d{7}$/.test(cont)) return false;
+
+            const charMap = {
+                'A':10,'B':12,'C':13,'D':14,'E':15,'F':16,'G':17,'H':18,'I':19,'J':20,'K':21,'L':23,'M':24,'N':25,'O':26,'P':27,'Q':28,'R':29,'S':30,'T':31,'U':32,'V':34,'W':35,'X':36,'Y':37,'Z':38
+            };
+            let sum = 0;
+            for (let i = 0; i < 10; i++) {
+                let val = (i < 4) ? charMap[cont[i]] : parseInt(cont[i]);
+                sum += val * Math.pow(2, i);
+            }
+            let checkDigit = (sum % 11) % 10;
+            return checkDigit === parseInt(cont[10]);
+        }
+
+        function validateISOUI() {
+            const val = document.getElementById('stuffCont').value;
+            const fb = document.getElementById('contFeedback');
+            if (!val) { fb.innerText = ''; return; }
+            
+            if (isISO6346Valid(val)) {
+                fb.innerText = '✅ Số Container hợp lệ';
+                fb.style.color = '#2ecc71';
+            } else {
+                fb.innerText = '❌ Số Container không đúng chuẩn ISO 6346';
+                fb.style.color = '#e74c3c';
+            }
+        }
+
+        function saveStuffingData() {
+            const jobno = document.getElementById('stuffJobNo').innerText;
+            const data = {
+                jobno: jobno,
+                container: document.getElementById('stuffCont').value,
+                seal: document.getElementById('stuffSeal').value,
+                datestuff: document.getElementById('stuffDate').value
+            };
+
+            fetch('/api/outbound/stuffing', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Cập nhật stuffing thành công!');
+                document.getElementById('stuffingModal').style.display = 'none';
+                loadData();
+            }).catch(e => {
+                console.error(e);
+                showToast(e.message, 'error');
+            });
+        }
+
+        function saveData() {
+            const id = document.getElementById('dataId').value;
+            const data = {
+                id: id || null,
+                jobno: document.getElementById('jobno').value,
+                rsl: document.getElementById('rsl').value,
+                fdc: document.getElementById('fdc').value,
+                datercv: document.getElementById('datercv').value,
+                
+                childpo: document.getElementById('childpo').value,
+                parentpo: document.getElementById('parentpo').value,
+                sku: document.getElementById('sku').value,
+                carton: document.getElementById('carton').value,
+                cbm: document.getElementById('cbm').value,
+                lct: document.getElementById('lct').value,
+                looscarton: document.getElementById('looscarton').value,
+                kindpallet: document.getElementById('kindpallet').value,
+                
+                container: document.getElementById('container').value,
+                seal: document.getElementById('seal').value,
+                datestuff: document.getElementById('datestuff').value,
+                remark: document.getElementById('remark').value
+            };
+
+            // Validate co ban
+            if (!data.jobno || !data.rsl || !data.sku || !data.carton) {
+                showToast('Vui lòng nhập Job No, RSL, SKU và Số Carton', 'error');
+                return;
+            }
+
+            const method = id ? 'PUT' : 'POST';
+
+            // Goi API (Luu y: Can cap nhat server.js de xu ly route /api/outbound)
+            fetch('/api/outbound', {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(async r => {
+                if (!r.ok) {
+                    const res = await r.json().catch(() => ({}));
+                    throw new Error(res.error || `Lỗi ${r.status}: API chưa được cài đặt`);
+                }
+                showToast('Lưu thành công!');
+                closeModal();
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadData(), 500);
+        }
+
+        // Xuat Excel
+        function exportExcel() {
+            if (!currentData || currentData.length === 0) {
+                showToast('Không có dữ liệu để xuất!', 'error');
+                return;
+            }
+
+            // Lấy container theo Job No (ưu tiên Job đầu tiên trong danh sách hiện tại)
+            const firstJob = currentData[0]?.jobno || '';
+            const containerByJob = currentData.find(i => i.jobno === firstJob && i.container)?.container;
+            const fallbackContainer = currentData.find(i => i.container)?.container || '';
+            const containerNo = containerByJob || fallbackContainer || 'NA';
+
+            // Định dạng ngày yyyymmdd
+            const today = new Date();
+            const yyyymmdd = today.toISOString().slice(0,10).replace(/-/g,'');
+
+            const exportData = currentData.map(item => ({
+                "Job No": item.jobno,
+                "RSL": item.rsl,
+                "Parent PO": item.parentpo,
+                "Child PO": item.childpo,
+                "FDC": item.fdc,
+                "SKU": item.sku,
+                "Carton": item.carton,
+                "LCT": item.lct,
+                "CBM": item.cbm,
+                "Date Rcv": item.datercv ? item.datercv.split('T')[0] : '',
+                "Container": item.container,
+                "Seal": item.seal,
+                "Date Stuffing": item.datestuff ? item.datestuff.split('T')[0] : '',
+                "Loose Ctn": item.looscarton,
+                "Kind Pallet": item.kindpallet,
+                "Remark": item.remark
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Outbound Data");
+            XLSX.writeFile(wb, `托盘明细_${yyyymmdd}_${containerNo}.xlsx`);
+        }
+
+        // Load lan dau
+        loadData();
+    </script>
+</body>
+</html>

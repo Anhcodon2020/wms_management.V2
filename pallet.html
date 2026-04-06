@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Pallet - WMS System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+
+        /* Thống kê pallet cards */
+        .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-left: 5px solid #3498db; }
+        .stat-card h3 { margin: 0 0 10px 0; color: #7f8c8d; font-size: 14px; text-transform: uppercase; }
+        .stat-values { display: flex; justify-content: space-between; align-items: flex-end; }
+        
+        .pallet-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 1000px) { .pallet-container { grid-template-columns: 1fr; } }
+
+        .form-inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-group label { font-size: 12px; font-weight: 600; color: #666; }
+        .form-group input, .form-group select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 14px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #27ae60; color: white; font-weight: 600; text-transform: uppercase; }
+        .th-out { background-color: #e67e22; }
+        tr:hover { background-color: #f1f1f1; }
+        
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; transition: 0.3s; }
+        .btn-add { background-color: #27ae60; color: white; }
+        .btn-add:hover { background-color: #219150; }
+        .btn-out { background-color: #e67e22; }
+        .btn-out:hover { background-color: #d35400; }
+        .btn-delete { padding: 5px 10px; background-color: #e74c3c; color: white; border-radius: 3px; font-size: 12px; }
+
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); opacity: 0; transition: 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>🪵 Quản Lý Nhập/Xuất Pallet</h2>
+        </div>
+
+        <!-- THẺ THỐNG KÊ TỒN KHO PALLET -->
+        <div class="summary-cards">
+            <div class="stat-card" style="border-left-color: #3498db;">
+                <h3>Pallet 1.2m</h3>
+                <div class="stat-values">
+                    <div style="font-size: 13px; color: #666;">Nhập: <span id="in_12" style="color: #27ae60; font-weight: bold;">0</span> | Xuất: <span id="out_12" style="color: #e67e22; font-weight: bold;">0</span></div>
+                    <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">Tồn: <span id="stock_12">0</span></div>
+                </div>
+            </div>
+
+            <div class="stat-card" style="border-left-color: #9b59b6;">
+                <h3>Pallet 1.6m</h3>
+                <div class="stat-values">
+                    <div style="font-size: 13px; color: #666;">Nhập: <span id="in_16" style="color: #27ae60; font-weight: bold;">0</span> | Xuất: <span id="out_16" style="color: #e67e22; font-weight: bold;">0</span></div>
+                    <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">Tồn: <span id="stock_16">0</span></div>
+                </div>
+            </div>
+
+            <div class="stat-card" style="border-left-color: #e67e22;">
+                <h3>Pallet 1.9m</h3>
+                <div class="stat-values">
+                    <div style="font-size: 13px; color: #666;">Nhập: <span id="in_19" style="color: #27ae60; font-weight: bold;">0</span> | Xuất: <span id="out_19" style="color: #e67e22; font-weight: bold;">0</span></div>
+                    <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">Tồn: <span id="stock_19">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pallet-container">
+            <!-- PHẦN NHẬP PALLET -->
+            <div class="pallet-section">
+                <div class="card">
+                    <h3 style="color: #27ae60; margin-top: 0;">➕ Nhập Pallet</h3>
+                    <div class="form-inline">
+                        <div class="form-group">
+                            <label>Ngày</label>
+                            <input type="date" id="trans_date_in">
+                        </div>
+                        <div class="form-group">
+                            <label>Loại</label>
+                            <select id="type_in" class="pallet-type-select"><option value="">-- Loại --</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label>SL</label>
+                            <input type="number" id="qty_in" style="width: 70px;">
+                        </div>
+                        <div class="form-group">
+                            <label>Ghi Chú</label>
+                            <input type="text" id="ghichu_in" placeholder="...">
+                        </div>
+                        <button class="btn btn-add" onclick="addPalletIn()">Nhập</button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ngày</th>
+                                <th>Loại</th>
+                                <th>SL</th>
+                                <th>Ghi Chú</th>
+                                <th>Xóa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- PHẦN XUẤT PALLET -->
+            <div class="pallet-section">
+                <div class="card">
+                    <h3 style="color: #e67e22; margin-top: 0;">➖ Xuất Pallet</h3>
+                    <div class="form-inline">
+                        <div class="form-group">
+                            <label>Ngày</label>
+                            <input type="date" id="trans_date_out">
+                        </div>
+                        <div class="form-group">
+                            <label>Loại</label>
+                            <select id="type_out" class="pallet-type-select"><option value="">-- Loại --</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label>SL</label>
+                            <input type="number" id="qty_out" style="width: 70px;">
+                        </div>
+                        <button class="btn btn-out" onclick="addPalletOut()">Xuất</button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="th-out">Ngày</th>
+                                <th class="th-out">Loại</th>
+                                <th class="th-out">SL</th>
+                                <th class="th-out">Xóa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- PHẦN QUẢN LÝ DANH MỤC LOẠI PALLET -->
+        <div class="card" style="margin-top: 20px; border-top: 4px solid #3498db;">
+            <h3 style="color: #3498db; margin-top: 0;">⚙️ Cấu Hình Loại Pallet</h3>
+            <div class="form-inline">
+                <div class="form-group">
+                    <label>Kích thước mới (VD: 1m2, 1m6...)</label>
+                    <input type="text" id="new_pallet_size" placeholder="Nhập kích thước..." style="width: 200px;">
+                </div>
+                <button class="btn" style="background-color: #3498db; color: white;" onclick="addNewPalletType()">Thêm Loại</button>
+            </div>
+            <div id="palletTypeList" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <!-- Danh sách các loại pallet sẽ load vào đây -->
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = 'toast show';
+            setTimeout(() => t.className = 'toast', 3000);
+        }
+
+        // Load Dropdown loại pallet
+        function loadPalletTypes() {
+            fetch('/api/pallet-types')
+            .then(r => r.json())
+            .then(data => {
+                const selects = document.querySelectorAll('.pallet-type-select');
+                const typeList = document.getElementById('palletTypeList');
+                
+                selects.forEach(sel => sel.innerHTML = '<option value="">-- Loại --</option>');
+                typeList.innerHTML = '';
+
+                data.forEach(t => {
+                    const label = t.pallet_size || t.name;
+                    selects.forEach(sel => {
+                        sel.innerHTML += `<option value="${t.id}">${label}</option>`;
+                    });
+                    typeList.innerHTML += `<span style="padding: 5px 10px; background: #eef2f7; border-radius: 15px; font-size: 13px; border: 1px solid #d1d9e6;">${label}</span>`;
+                });
+            });
+        }
+
+        // Load dữ liệu cả 2 bảng
+        function loadAllPallets() {
+            // Sử dụng Promise.all để lấy dữ liệu cả Nhập và Xuất cùng lúc nhằm tính toán tồn kho
+            Promise.all([
+                fetch('/api/pallets').then(r => r.json()),
+                fetch('/api/pallets/out').then(r => r.json())
+            ])
+            .then(([inData, outData]) => {
+                // 1. Hiển thị bảng Nhập
+                const tbody = document.getElementById('inTableBody');
+                tbody.innerHTML = inData.map(item => `
+                    <tr>
+                        <td>${new Date(item.trans_date).toLocaleDateString('vi-VN')}</td>
+                        <td><b>${item.pallet_name || 'Không xác định'}</b></td>
+                        <td>${item.quantity}</td>
+                        <td>${item.ghichu || '-'}</td>
+                        <td><button class="btn-delete" onclick="deleteIn(${item.id})">x</button></td>
+                    </tr>
+                `).join('') || '<tr><td colspan="5" style="text-align:center;">Trống</td></tr>';
+
+                // 2. Hiển thị bảng Xuất
+                const tbodyOut = document.getElementById('outTableBody');
+                tbodyOut.innerHTML = outData.map(item => `
+                    <tr>
+                        <td>${new Date(item.trans_date).toLocaleDateString('vi-VN')}</td>
+                        <td><b>${item.pallet_name || '...'}</b></td>
+                        <td>${item.quantity}</td>
+                        <td><button class="btn-delete" onclick="deleteOut(${item.id})">x</button></td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4" style="text-align:center;">Trống</td></tr>';
+
+                // 3. Tính toán thống kê cho các thẻ (1.2, 1.6, 1.9)
+                const stats = {
+                    '12': { in: 0, out: 0 },
+                    '16': { in: 0, out: 0 },
+                    '19': { in: 0, out: 0 }
+                };
+
+                const process = (item, type) => {
+                    const name = (item.pallet_name || '').toString().toLowerCase();
+                    if (name.includes('1.2') || name.includes('1m2')) stats['12'][type] += item.quantity;
+                    else if (name.includes('1.6') || name.includes('1m6')) stats['16'][type] += item.quantity;
+                    else if (name.includes('1.9') || name.includes('1m9')) stats['19'][type] += item.quantity;
+                };
+
+                inData.forEach(item => process(item, 'in'));
+                outData.forEach(item => process(item, 'out'));
+
+                // Cập nhật lên giao diện
+                ['12', '16', '19'].forEach(size => {
+                    const i = stats[size].in;
+                    const o = stats[size].out;
+                    document.getElementById(`in_${size}`).innerText = i;
+                    document.getElementById(`out_${size}`).innerText = o;
+                    document.getElementById(`stock_${size}`).innerText = i - o;
+                });
+            })
+            .catch(err => {
+                console.error("Lỗi khi tải dữ liệu pallet:", err);
+                showToast("Không thể tải dữ liệu pallet!");
+            });
+        }
+
+        function addPalletIn() {
+            const data = {
+                trans_date: document.getElementById('trans_date_in').value,
+                pallet_type_id: document.getElementById('type_in').value,
+                quantity: document.getElementById('qty_in').value,
+                ghichu: document.getElementById('ghichu_in').value
+            };
+            if (!data.trans_date || !data.pallet_type_id || !data.quantity) return alert("Thiếu thông tin!");
+
+            fetch('/api/pallets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(() => {
+                showToast('Đã nhập pallet!');
+                loadAllPallets();
+                document.getElementById('qty_in').value = '';
+                document.getElementById('ghichu_in').value = '';
+            });
+        }
+
+        function addPalletOut() {
+            const data = {
+                trans_date: document.getElementById('trans_date_out').value,
+                pallet_type_id: document.getElementById('type_out').value,
+                quantity: document.getElementById('qty_out').value
+            };
+            if (!data.trans_date || !data.pallet_type_id || !data.quantity) return alert("Thiếu thông tin!");
+
+            fetch('/api/pallets/out', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(() => {
+                showToast('Đã xuất pallet!');
+                loadAllPallets();
+                document.getElementById('qty_out').value = '';
+            });
+        }
+
+        function addNewPalletType() {
+            const size = document.getElementById('new_pallet_size').value;
+            if (!size) return showToast('Vui lòng nhập kích thước!');
+
+            fetch('/api/pallet-types', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pallet_size: size })
+            }).then(r => r.json()).then(res => {
+                if (res.error) throw new Error(res.error);
+                showToast('Đã thêm loại pallet mới!');
+                document.getElementById('new_pallet_size').value = '';
+                loadPalletTypes();
+            }).catch(err => alert(err.message));
+        }
+
+        function deleteIn(id) {
+            if (confirm('Xóa bản ghi nhập này?')) {
+                fetch(`/api/pallets/${id}`, { method: 'DELETE' }).then(() => loadAllPallets());
+            }
+        }
+
+        function deleteOut(id) {
+            if (confirm('Xóa bản ghi xuất này?')) {
+                fetch(`/api/pallets/out/${id}`, { method: 'DELETE' }).then(() => loadAllPallets());
+            }
+        }
+
+        // Khởi tạo
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('trans_date_in').value = today;
+        document.getElementById('trans_date_out').value = today;
+        loadPalletTypes();
+        loadAllPallets();
+    </script>
+</body>
+</html>

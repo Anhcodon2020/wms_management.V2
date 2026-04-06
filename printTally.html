@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Tally Sheet - WMS</title>
+    <style>
+        body { font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .no-print-zone { 
+            background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px;
+            position: sticky; top: 0; z-index: 1000;
+        }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-print { background: #34495e; color: white; }
+        .btn-close { background: #95a5a6; color: white; }
+
+        @page { size: A4 landscape; margin: 10mm; }
+        
+        @media print {
+            .no-print-zone { display: none !important; }
+            body { background: none; padding: 0; }
+            .tally-page { box-shadow: none !important; margin: 0 !important; border: none !important; page-break-after: always; }
+        }
+
+        .tally-page { 
+            background: #fff;
+            width: 297mm; 
+            min-height: 210mm; 
+            margin: 0 auto 20px auto;
+            padding: 10mm; 
+            box-sizing: border-box; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .tally-header { display: flex; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px; }
+        .tally-logo { width: 150px; }
+        .tally-title { flex: 1; text-align: center; }
+        .tally-title h1 { margin: 0; font-size: 22px; text-transform: uppercase; }
+        
+        .tally-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 14px; }
+        .tally-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .tally-table th, .tally-table td { border: 1px solid #000; padding: 10px 6px; font-size: 12px; text-align: center; min-height: 35px; }
+        .tally-table th { background: #f2f2f2; font-weight: bold; }
+        
+        .section-title { font-weight: bold; text-transform: uppercase; font-size: 13px; margin: 15px 0 5px 0; }
+        .signature-section { display: flex; justify-content: space-between; margin-top: 30px; text-align: center; font-weight: bold; font-size: 14px; }
+        .sig-box { height: 80px; }
+    </style>
+</head>
+<body>
+    <div class="no-print-zone">
+        <span style="font-weight: bold; color: #34495e;">Xem Trước Bản In Tally Sheet</span>
+        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
+    </div>
+
+    <div id="printContainer"></div>
+
+    <script>
+        const rawData = localStorage.getItem('printTallyData');
+        if (!rawData) {
+            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu Tally!</h1></div>";
+        } else {
+            const items = JSON.parse(rawData);
+            
+            // Nhóm theo Packing List No
+            const groups = {};
+            items.forEach(item => {
+                const pl = item.PackinglistNo || 'N/A';
+                if (!groups[pl]) groups[pl] = [];
+                groups[pl].push(item);
+            });
+
+            const container = document.getElementById('printContainer');
+            
+            for (const plNo in groups) {
+                const plItems = groups[plNo];
+                const first = plItems[0];
+                const rcvDate = first.datercv ? new Date(first.datercv).toLocaleDateString('vi-VN') : '-';
+                const supplier = first.name_doc || first.TENNCC || first.MANCC || '-';
+
+                let tableRows = '';
+                let palletRows = '';
+                let totalCarton = 0;
+                let totalCbm = 0;
+                let totalEstPallet = 0;
+                
+                plItems.forEach((item, idx) => {
+                    const cartonQty = parseFloat(item.carton) || 0;
+                    totalCarton += cartonQty;
+                    totalCbm += parseFloat(item.cbm) || 0;
+                    // Bảng 1: Chi tiết hàng
+                    tableRows += `
+                        <tr>
+                            <td>${idx + 1}</td>
+                            <td>${item.po}</td>
+                            <td><b>${item.sku}</b></td>
+                            <td>${cartonQty}</td>
+                            <td></td>
+                            <td></td>
+                        </tr>`;
+                    
+                    // Bảng 2: Kiểm đếm Pallet
+                    const cpp = parseInt(item.cartonperpallet) || 0;
+                    const estPalletNum = (cpp > 0 && cartonQty) ? Math.ceil(cartonQty / cpp) : 0;
+                    totalEstPallet += estPalletNum;
+                    const estPalletDisplay = estPalletNum > 0 ? estPalletNum : '-';
+
+                    // Tự động thêm dòng nếu số pallet > 15 (mỗi dòng chứa 15 ô kiểm đếm)
+                    const numPalletRows = estPalletNum > 0 ? Math.ceil(estPalletNum / 15) : 1;
+
+                    for (let r = 0; r < numPalletRows; r++) {
+                        palletRows += `
+                            <tr>
+                                ${r === 0 ? `
+                                    <td rowspan="${numPalletRows}">${item.sku}</td>
+                                    <td rowspan="${numPalletRows}">${cpp || '-'}</td>
+                                    <td rowspan="${numPalletRows}">${estPalletDisplay}</td>
+                                ` : ''}
+                                ${Array(15).fill('<td></td>').join('')}
+                            </tr>`;
+                    }
+                });
+
+                // Thêm dòng tổng cộng cho Bảng 1 (Chi tiết hàng)
+                tableRows += `
+                    <tr style="font-weight: bold; background-color: #f2f2f2;">
+                        <td colspan="3" style="text-align: right;">TỔNG CỘNG:</td>
+                        <td>${totalCarton}</td>
+                        <td></td>
+                        <td>CBM: ${totalCbm.toFixed(3)}</td>
+                    </tr>`;
+
+                // Thêm dòng tổng cộng cho Bảng 2 (Kiểm đếm Pallet)
+                palletRows += `
+                    <tr style="font-weight: bold; background-color: #f2f2f2;">
+                        <td colspan="2" style="text-align: right;">TỔNG CỘNG:</td>
+                        <td>${totalEstPallet}</td>
+                        <td colspan="15"></td>
+                    </tr>`;
+
+                container.innerHTML += `
+                    <div class="tally-page">
+                        <div class="tally-header">
+                            <div class="tally-logo">
+                                <img src="logo.png" style="max-width:100%" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/b/b1/KLN_Logo.png'">
+                            </div>
+                            <div class="tally-title">
+                                <h1>Phiếu Nhập Hàng / Tally Sheet</h1>
+                                <div style="margin-top:5px"><span style="border:1px solid #000; padding:2px 10px">PL No: <b>${plNo}</b></span></div>
+                            </div>
+                            <div style="width:150px; text-align:right; font-size:12px">Ngày in: ${new Date().toLocaleDateString('vi-VN')}</div>
+                        </div>
+
+                        <div class="tally-info">
+                            <div><strong>Nhà Cung Cấp:</strong> ${supplier}</div>
+                            <div><strong>Ngày Nhập:</strong> ${rcvDate}</div>
+                            <div><strong>Số Cont/Xe:</strong> ${first.contxe || '-'}</div>
+                            <div><strong>Giờ Bắt Đầu:</strong> ........ <strong>Kết Thúc:</strong> ........</div>
+                        </div>
+
+                        <table class="tally-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:5%">STT</th>
+                                    <th style="width:20%">Parent PO</th>
+                                    <th style="width:25%">SKU</th>
+                                    <th style="width:15%">Số Kiện (Kế hoạch)</th>
+                                    <th style="width:15%">Thực Nhận</th>
+                                    <th style="width:20%">Ghi Chú</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+
+                        <div class="section-title">Chi Tiết Kiểm Đếm Pallet:</div>
+                        <table class="tally-table">
+                            <thead>
+                                <tr>
+                                    <th>SKU</th>
+                                    <th>Quy Cách</th>
+                                    <th>Pallet (Dự kiến)</th>
+                                    <th colspan="15">Chi Tiết Kiểm Đếm</th>
+                                </tr>
+                            </thead>
+                            <tbody>${palletRows}</tbody>
+                        </table>
+
+                        <div class="section-title">Ghi Nhận Hàng Lỗi / Bất Thường:</div>
+                        <table class="tally-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:25%">Số SKU</th>
+                                    <th style="width:55%">Lý do (Rách, móp, bể, ướt, dư, thiếu...)</th>
+                                    <th style="width:20%">Số Lượng</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${Array(4).fill('<tr><td>&nbsp;</td><td></td><td></td></tr>').join('')}
+                            </tbody>
+                        </table>
+
+                        <div style="font-size:11px; font-style:italic; margin-top:10px">
+                            * Lưu ý: Khi nhập hàng phát hiện mối, kiến, côn trùng lập tức báo trưởng nhóm. Hàng không quay theo chiều mũi tên phải chụp hình.
+                        </div>
+
+                        <div class="signature-section">
+                            <div>Người Giao Hàng<div class="sig-box"></div>..........................</div>
+                            <div>Người Kiểm Đếm<div class="sig-box"></div>..........................</div>
+                            <div>Người Nhập Liệu<div class="sig-box"></div>..........................</div>
+                        </div>
+                    </div>`;
+            }
+            
+            if (Object.keys(groups).length === 1) {
+                document.title = "TallySheet_" + Object.keys(groups)[0];
+            }
+        }
+    </script>
+</body>
+</html>

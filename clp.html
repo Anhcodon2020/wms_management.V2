@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý CLP - Import Shipment</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .filter-section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-group label { font-size: 12px; font-weight: 600; color: #666; }
+        .form-group input, .form-group select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 12px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #2c3e50; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f1f1f1; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; transition: 0.3s; }
+        .btn-import { background-color: #27ae60; color: white; }
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); opacity: 0; transition: 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/clp">🚢 Quản Lý CLP</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>🚢 Quản Lý Container Loading Plan (CLP)</h2>
+            <div>
+                <input type="text" id="searchInput" placeholder="Tìm Job, PO, Cont, Shipment..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:250px;" onkeyup="searchData()">
+                <button class="btn" style="background:#e67e22; color:white;" onclick="exportPL()">📤 Export PL</button>
+                <button class="btn" style="background:#2ecc71; color:white;" onclick="exportEDI()" title="Xuất file EDI">📑 Export EDI</button>
+                <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📥 Import Excel</button>
+                <input type="file" id="fileInput" hidden accept=".xlsx, .xls" onchange="processImport()">
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Ngày Đóng Hàng</label>
+                    <input type="date" id="filterDate" onchange="loadJobsByDate()">
+                </div>
+                <div class="form-group">
+                    <label>Lọc Job No (Có số Cont)</label>
+                    <select id="jobFilter" onchange="onJobSelect()">
+                        <option value="">-- Chọn Job --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Container No</label>
+                    <input type="text" id="txtcont" placeholder="Số Container..." onkeyup="searchData()">
+                </div>
+                <div class="form-group">
+                    <label>Seal No</label>
+                    <input type="text" id="txtseal" placeholder="Số Seal...">
+                </div>
+                <div class="form-group">
+                    <label>Cập nhật Shipment ID (Shipment Order)</label>
+                    <input type="text" id="txtShipmentId" placeholder="Nhập ID mới..." onkeyup="searchData()">
+                </div>
+                <div class="form-group">
+                    <label>Job No Filter (jobno_shp)</label>
+                    <input type="text" id="jobnofilter" placeholder="Nhập Job No SHP..." onkeyup="searchData()">
+                </div>
+                <div class="form-group" style="justify-content: flex-end; flex-direction: row; gap: 10px; align-items: flex-end; grid-column: span 1;">
+                    <button class="btn" style="background:#3498db; color:white;" onclick="updateShipmentOrder()" title="Cập nhật thông tin cho Job đang chọn">Cập Nhật</button>
+                    <button class="btn" style="background:#e74c3c; color:white;" onclick="deleteJobData()" title="Xóa toàn bộ Job đang chọn">🗑️ Xóa Job</button>
+                    <button class="btn" style="background:#c0392b; color:white;" onclick="deleteShipmentData()" title="Xóa toàn bộ theo Shipment ID đang nhập">🗑️ Xóa Shipment</button>
+                </div>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Job No</th>
+                        <th>Job No SHP</th>
+                        <th>Shipment Order</th>
+                        <th>Release Key</th>
+                        <th>PO Number</th>
+                        <th>SKU</th>
+                        <th>Final DC</th>
+                        <th>Hub DC</th>
+                        <th>System Pallet</th>
+                        <th>Pallet Number</th>
+                        <th>Carton</th>
+                        <th>CBM</th>
+                        <th>Weight</th>
+                        <th>Container</th>
+                        <th>Seal</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTableBody">
+                    <tr><td colspan="13" style="text-align:center; padding:20px;">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let currentJobDetails = [];
+        let currentListData = []; // Lưu trữ dữ liệu đang hiển thị để xuất Excel
+
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.backgroundColor = type === 'success' ? '#27ae60' : '#e74c3c';
+            t.className = 'toast show';
+            setTimeout(() => t.className = 'toast', 3000);
+        }
+
+        function loadData() {
+            const q = document.getElementById('searchInput').value;
+            const cont = document.getElementById('txtcont').value;
+            const shipment = document.getElementById('txtShipmentId').value;
+            const jobFilterEl = document.getElementById('jobFilter');
+            const jobno_shp = document.getElementById('jobnofilter').value;
+
+            const params = new URLSearchParams({ q });
+            if (cont) params.append('cont', cont);
+            if (shipment) params.append('shipmentorder', shipment);
+            if(jobFilterEl && jobFilterEl.value) params.append('jobno', jobFilterEl.value);
+            if(jobno_shp) params.append('jobno_shp', jobno_shp);
+
+            fetch(`/api/importshipment?${params.toString()}`)
+            .then(r => r.json())
+            .then(data => {
+                currentListData = data;
+                const tbody = document.getElementById('dataTableBody');
+                tbody.innerHTML = data.map(item => `
+                    <tr>
+                        <td><b>${item.jobno}</b></td>
+                        <td style="color: #3498db; font-weight: 600;">${item.jobno_shp || '-'}</td>
+                        <td style="color:#e67e22; font-weight:bold;">${item.shipmentorder || '-'}</td>
+                        <td>${item.relese_key}</td>
+                        <td>${item.ponumber}</td>
+                        <td>${item.sku}</td>
+                        <td><span class="badge bg-blue">${item.finaldc}</span></td>
+                        <td>${item.hubdc || '-'}</td>
+                        <td>${item.systempallet || '-'}</td>
+                        <td style="color:#2980b9; font-weight:bold;">${item.palletnumber || '-'}</td>
+                        <td>${item.carton}</td>
+                        <td>${item.cbm ? item.cbm.toFixed(3) : '0.000'}</td>
+                        <td>${item.weight || '0'}</td>
+                        <td><b>${item.cont}</b></td>
+                        <td>${item.seal}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="15" style="text-align:center;">Không có dữ liệu</td></tr>';
+            })
+            .catch(err => console.error('Lỗi tải dữ liệu:', err));
+        }
+
+        async function exportPL() {
+            if (!currentListData || currentListData.length === 0) {
+                showToast('Không có dữ liệu để xuất!', 'error');
+                return;
+            }
+
+            // Shipment ID dùng để hiển thị A1: "SPR ORDER <shipmentorder>"
+            const shipmentId = document.getElementById('txtShipmentId').value || (currentListData[0]?.shipmentorder || '');
+            const contNumber = document.getElementById('txtcont').value || (currentListData[0]?.cont || '');
+            const sealNumber = document.getElementById('txtseal').value || (currentListData[0]?.seal || '');
+
+            // Lấy tổng loose theo Job (dựa trên jobno_shp) từ scanfile
+            const jobList = [...new Set(currentListData.map(i => i.jobno_shp || i.jobno).filter(Boolean))];
+            let looseMap = {};
+            if (jobList.length > 0) {
+                try {
+                const resLoose = await fetch(`/api/scanfile/loose-qty?jobs=${jobList.map(encodeURIComponent).join(',')}`);
+                looseMap = await resLoose.json();
+            } catch (err) {
+                console.warn('Không lấy được loose qty:', err);
+            }
+            }
+
+            // Đọc template PL từ server
+            const templateRes = await fetch('/api/clp/template');
+            if (!templateRes.ok) {
+                showToast('Không đọc được file template CLP!', 'error');
+                return;
+            }
+            const buffer = await templateRes.arrayBuffer();
+            const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+
+            const setCell = (addr, val, forceString = false) => {
+                if (forceString) {
+                    sheet[addr] = { t: 's', v: val ?? '' };
+                    return;
+                }
+                const num = Number(val);
+                const isNumber = !isNaN(num) && val !== '' && val !== null && val !== undefined;
+                sheet[addr] = { t: isNumber ? 'n' : 's', v: isNumber ? num : (val ?? '') };
+            };
+
+            // Header thông tin chung
+            const first = currentListData[0] || {};
+            setCell_A1(sheet, 'A1', `SPR ORDER ${shipmentId}`, true, 32, 'Aptos Narrow');
+            setCell('G3', contNumber || first.cont, true);
+            setCell('G4', sealNumber || first.seal, true);
+
+            // Định nghĩa Style cho Header (Viền và Màu nền)
+            const headerStyle = {
+                fill: { fgColor: { rgb: "D9D9D9" } }, // Màu xám nhạt
+                font: { bold: true, sz: 10 },
+                border: {
+                    top: { style: "thin" }, bottom: { style: "thin" },
+                    left: { style: "thin" }, right: { style: "thin" }
+                },
+                alignment: { vertical: "center", horizontal: "center", wrapText: true }
+            };
+
+            // Áp dụng style cho vùng tiêu đề từ A9 đến N10
+            ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(col => {
+                for (let r = 9; r <= 10; r++) {
+                    const addr = col + r;
+                    if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
+                    sheet[addr].s = headerStyle;
+                }
+            });
+
+            // Ghi dữ liệu bắt đầu từ hàng 11
+            let currentRow = 11;
+            let lastJobNo = null;
+            let subtotalCarton = 0;
+            let subtotalCbm = 0;
+
+            const subtotalStyle = {
+                fill: { fgColor: { rgb: "E2EFDA" } }, // Màu xanh lá nhạt
+                font: { bold: true, sz: 11 },
+                border: {
+                    top: { style: "thin" }, bottom: { style: "double" },
+                    left: { style: "thin" }, right: { style: "thin" }
+                },
+                alignment: { horizontal: "right" }
+            };
+
+            // Sắp xếp: jobno_shp -> systempallet -> weight (giảm dần) -> palletnumber
+            const sortedData = [...currentListData].sort((a, b) => {
+                const jA = a.jobno_shp || a.jobno || '';
+                const jB = b.jobno_shp || b.jobno || '';
+                if (jA !== jB) return jA.localeCompare(jB, undefined, { numeric: true });
+
+                const spA = a.systempallet || '';
+                const spB = b.systempallet || '';
+                if (spA !== spB) return spA.localeCompare(spB, undefined, { numeric: true });
+
+                const wA = parseFloat(a.weight) || 0;
+                const wB = parseFloat(b.weight) || 0;
+                if (wA !== wB) return wB - wA; // lớn → nhỏ
+
+                const pnA = a.palletnumber || '';
+                const pnB = b.palletnumber || '';
+                return pnA.localeCompare(pnB, undefined, { numeric: true });
+            });
+
+            sortedData.forEach((item, idx) => {
+                const currentJob = item.jobno_shp || item.jobno || 'N/A';
+                
+                // Nếu đổi Job No, chèn dòng tổng cộng cho Job cũ
+                if (lastJobNo !== null && currentJob !== lastJobNo) {
+                    setCell(`J${currentRow}`, `TOTAL ${lastJobNo}:`, true);
+                    setCell(`K${currentRow}`, subtotalCarton);
+                    setCell(`N${currentRow}`, subtotalCbm.toFixed(3));
+                    
+                    // Áp dụng style cho dòng subtotal
+                    ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(col => {
+                        const addr = col + currentRow;
+                        if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
+                        sheet[addr].s = subtotalStyle;
+                    });
+
+                    currentRow++;
+                    subtotalCarton = 0;
+                    subtotalCbm = 0;
+                }
+
+                const looseKey = item.jobno_shp || item.jobno;
+                const looseQty = looseMap[looseKey] || 0;
+                const palletNum = item.palletnumber || '';
+
+                // Chuỗi giữ nguyên leading zero
+                setCell(`A${currentRow}`, item.jobno || '', true);
+                setCell(`B${currentRow}`, item.relese_key || '', true);
+                setCell(`C${currentRow}`, item.ponumber || '', true);
+                setCell(`D${currentRow}`, item.sku || '', true);
+                setCell(`E${currentRow}`, item.finaldc || '', true);
+                setCell(`F${currentRow}`, item.hubdc || '', true);
+                setCell(`G${currentRow}`, item.systempallet || '', true);
+                setCell(`H${currentRow}`, item.measurement || '', true);
+                setCell(`I${currentRow}`, (item.weight && item.weight != 0) ? item.weight : '');
+                const cbmPalletVal = parseFloat(item.cbm_pallet) || 0;
+                setCell(`J${currentRow}`, cbmPalletVal !== 0 ? cbmPalletVal : '');
+                setCell(`K${currentRow}`, item.carton || 0);
+                setCell(`L${currentRow}`, palletNum ? palletNum : '', true);
+                setCell(`M${currentRow}`, palletNum ? 1 : '');
+                setCell(`N${currentRow}`, (item.cbm && item.cbm != 0) ? item.cbm : '');
+                setCell(`O${currentRow}`, looseQty || 0);
+
+                subtotalCarton += (parseInt(item.carton) || 0);
+                subtotalCbm += (parseFloat(item.cbm) || 0);
+                lastJobNo = currentJob;
+                currentRow++;
+            });
+
+            // Chèn dòng subtotal cuối cùng cho Job cuối cùng trong danh sách
+            if (lastJobNo !== null) {
+                setCell(`J${currentRow}`, `TOTAL ${lastJobNo}:`, true);
+                setCell(`K${currentRow}`, subtotalCarton);
+                setCell(`N${currentRow}`, subtotalCbm.toFixed(3));
+                ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(col => {
+                    const addr = col + currentRow;
+                    if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
+                    sheet[addr].s = subtotalStyle;
+                });
+            }
+
+            const now = new Date();
+            const yyyymmdd = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+            const jobKey = first.jobno_shp || first.jobno || 'EXPORT';
+            const hubdc = first.hubdc || '';
+            XLSX.writeFile(workbook, `托盘明细${yyyymmdd}_DC${hubdc}_${jobKey}.xlsx`);
+        }
+
+        async function exportEDI() {
+            if (!currentListData || currentListData.length === 0) {
+                showToast('Không có dữ liệu để xuất!', 'error');
+                return;
+            }
+
+            const shipmentId = document.getElementById('txtShipmentId').value || (currentListData[0]?.shipmentorder || '');
+            const contNumber = document.getElementById('txtcont').value || (currentListData[0]?.cont || '');
+            const sealNumber = document.getElementById('txtseal').value || (currentListData[0]?.seal || '');
+
+            // Lấy tổng loose theo Job (dựa trên jobno_shp) từ scanfile
+            const jobList = [...new Set(currentListData.map(i => i.jobno_shp || i.jobno).filter(Boolean))];
+            let looseMap = {};
+            if (jobList.length > 0) {
+                try {
+                    const resLoose = await fetch(`/api/scanfile/loose-qty?jobs=${jobList.map(encodeURIComponent).join(',')}`);
+                    looseMap = await resLoose.json();
+                } catch (err) {
+                    console.warn('Không lấy được loose qty:', err);
+                }
+            }
+
+            // Đọc template EDI container
+            const templateRes = await fetch('/api/clp/template-container');
+            if (!templateRes.ok) {
+                showToast('Không đọc được file template EDI!', 'error');
+                return;
+            }
+            const buffer = await templateRes.arrayBuffer();
+            const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+
+            const setCell = (addr, val, forceString = false) => {
+                if (forceString) {
+                    sheet[addr] = { t: 's', v: val ?? '' };
+                    return;
+                }
+                const num = Number(val);
+                const isNumber = !isNaN(num) && val !== '' && val !== null && val !== undefined;
+                sheet[addr] = { t: isNumber ? 'n' : 's', v: isNumber ? num : (val ?? '') };
+            };
+
+            // Lọc danh sách Pallet duy nhất (Deduplicate)
+            // Vì một pallet có thể chứa nhiều SKU, EDI chỉ cần ghi nhận mỗi mã pallet 1 lần
+            const uniquePallets = [];
+            const seenPallets = new Set();
+            
+            currentListData.forEach(item => {
+                if (item.systempallet && !seenPallets.has(item.systempallet)) {
+                    seenPallets.add(item.systempallet);
+                    uniquePallets.push(item);
+                }
+            });
+
+            if (uniquePallets.length === 0) {
+                showToast('Không tìm thấy danh sách Pallet! Vui lòng kiểm tra cột System Pallet.', 'error');
+                return;
+            }
+
+            // Xuất danh sách EDI vào cột A, B, C bắt đầu từ hàng 2
+            uniquePallets.forEach((item, idx) => {
+                const row = 2 + idx; 
+                setCell(`A${row}`, contNumber || item.cont || '', true); // Cột A: Số Container
+                setCell(`B${row}`, item.systempallet || '', true);      // Cột B: System Pallet
+                setCell(`C${row}`, "1", true);                         // Cột C: Giá trị "1"
+            });
+
+            // Cập nhật lại vùng dữ liệu để Excel hiển thị đúng số dòng
+            const maxRow = 2 + uniquePallets.length - 1;
+            sheet['!ref'] = `A1:C${maxRow}`;
+
+            const first = currentListData[0] || {};
+            const now = new Date();
+            const yyyymmdd = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+            const jobKey = first.jobno_shp || first.jobno || 'EXPORT';
+            XLSX.writeFile(workbook, `EDI_${yyyymmdd}_${jobKey}.xlsx`);
+        }
+
+        function loadJobsByDate() {
+            const date = document.getElementById('filterDate').value;
+            if (!date) return;
+            fetch(`/api/importshipment/jobs-by-date?date=${date}`)
+            .then(r => r.json())
+            .then(data => {
+                currentJobDetails = data;
+                const sel = document.getElementById('jobFilter');
+                sel.innerHTML = '<option value="">-- Chọn Job --</option>';
+                data.forEach(j => {
+                    sel.innerHTML += `<option value="${j.jobno}">${j.jobno}</option>`;
+                });
+            });
+        }
+
+        function onJobSelect() {
+            const jobno = document.getElementById('jobFilter').value;
+            const job = currentJobDetails.find(j => j.jobno === jobno);
+            if (job) {
+                document.getElementById('txtcont').value = job.container || '';
+                document.getElementById('txtseal').value = job.seal || '';
+                // Sau khi chọn Job, tìm kiếm bảng dưới theo Job này
+                document.getElementById('jobnofilter').value = jobno;
+                loadData();
+            }
+        }
+
+        async function updateShipmentOrder() {
+            const jobno = document.getElementById('jobFilter').value;
+            const jobnoFilter = document.getElementById('jobnofilter').value.trim();
+            // Lấy thông tin trực tiếp từ các ô nhập liệu trên trang clp.html
+            const shipmentorder = document.getElementById('txtShipmentId').value.trim();
+            const cont = document.getElementById('txtcont').value.trim();
+            const seal = document.getElementById('txtseal').value.trim();
+            const jobno_shp = jobnoFilter || jobno; // Ưu tiên giá trị nhập jobnofilter
+
+            if (!jobno) return showToast('Vui lòng chọn Job!', 'error');
+
+            try {
+                const res = await fetch('/api/importshipment/update-order', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobno, shipmentorder, cont, seal, jobno_shp })
+                });
+                const result = await res.json();
+                showToast(result.message);
+                loadData();
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        async function deleteJobData() {
+            const jobno = document.getElementById('jobFilter').value;
+            if (!jobno) return showToast('Vui lòng chọn Job để xóa!', 'error');
+
+            if (!confirm(`Bạn có chắc muốn XÓA TOÀN BỘ dữ liệu Shipment của Job: ${jobno}?\nHành động này không thể hoàn tác!`)) return;
+
+            try {
+                const res = await fetch(`/api/importshipment/job/${encodeURIComponent(jobno)}`, {
+                    method: 'DELETE'
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error);
+                showToast(result.message);
+                loadData();
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        async function deleteShipmentData() {
+            const shipmentorder = document.getElementById('txtShipmentId').value.trim();
+            if (!shipmentorder) return showToast('Vui lòng nhập Shipment ID vào ô tương ứng để xóa!', 'error');
+
+            if (!confirm(`Bạn có chắc muốn XÓA TOÀN BỘ dữ liệu của Shipment ID: ${shipmentorder}?\nHành động này không thể hoàn tác!`)) return;
+
+            try {
+                const res = await fetch(`/api/importshipment/shipment/${encodeURIComponent(shipmentorder)}`, {
+                    method: 'DELETE'
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error);
+                showToast(result.message);
+                loadData();
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        async function processImport() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+
+            // Lấy cont / seal / shipment đang nhập để gán mặc định cho từng dòng import
+            const inputCont = document.getElementById('txtcont').value.trim();
+            const inputSeal = document.getElementById('txtseal').value.trim();
+            const inputShipment = document.getElementById('txtShipmentId').value.trim();
+            const inputJobnoShp = document.getElementById('jobnofilter').value.trim();
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+
+                // Mapping tiêu đề Excel chính xác theo yêu cầu cập nhật mới nhất
+                const mappedData = rows.map(row => ({
+                    jobno: row['JOB NO'] || '',
+                    relese_key: row['Release Key'] || '',
+                    ponumber: row['PO-NUMBER'] || '',
+                    sku: row['SKU'] || '',
+                    finaldc: row['ToFinalDC_ID'] || '',
+                    hubdc: row['ToHubDC_ID'] || '',
+                    systempallet: row['System Pallet number'] || '',
+                    measurement: row['MEASUREMENT'] || '',
+                    weight: row['G.WEIGHT'] || 0,
+                    // CBM Pallet lấy đúng cột 'CBM' (hoặc 'cbm' nếu file viết thường)
+                    cbm_pallet: row['CBM'] ?? row['cbm'] ?? 0,
+                    carton: row['CTN'] || 0,
+                    palletnumber: row['Pallet number'] || '',
+                    // Ưu tiên giá trị trong file; nếu trống sẽ dùng giá trị đang nhập trên form
+                    cont: row['txtcont'] || inputCont,
+                    seal: row['txtseal'] || inputSeal,
+                    shipmentorder: row['txtshipmentid'] || inputShipment,
+                    loosecarton: row['Loose'] || 0,
+                    cbm: 0, // Server sẽ tự tính toán (Carton * Unit CBM từ Master Data)
+                    jobno_shp: inputJobnoShp || row['JOB NO'] || '' // Ưu tiên giá trị jobnofilter
+                }));
+
+                try {
+                    const res = await fetch('/api/importshipment/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(mappedData)
+                    });
+                    const result = await res.json();
+                    if (!res.ok) throw new Error(result.error);
+                    showToast(result.message);
+                    loadData();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            document.getElementById('fileInput').value = '';
+        }
+
+        let searchTimeout;
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(loadData, 500);
+        }
+        
+        function setCell_A1(sheet, address, value, bold = true, fontSize = 32, fontName = 'Aptos Narrow') {
+            sheet[address] = { 
+                t: 's', 
+                v: value, 
+                s: { 
+                    font: { 
+                        name: fontName, 
+                        sz: fontSize, 
+                        bold: bold 
+                    },
+                    alignment: { vertical: "center", horizontal: "center" }
+                } 
+            };
+        }
+        function setCell_A3(sheet, address, value, bold = true, fontSize = 12, fontName = 'Arial') {
+            sheet[address] = { 
+                t: 's', 
+                v: value, 
+                s: { 
+                    font: { 
+                        name: fontName, 
+                        sz: fontSize, 
+                        bold: bold 
+
+                    },
+                    alignment: { vertical: "center", horizontal: "center" }
+                } 
+            };
+        }
+        // Hàm setCell cần được điều chỉnh để tương thích với cấu trúc của xlsx-js-style
+        // và không ghi đè style của setCell_A1
+        function setCell(sheet, addr, val, forceString = false) {
+            if (forceString) {
+                sheet[addr] = { t: 's', v: val ?? '' };
+                return;
+            }
+            const num = Number(val);
+            const isNumber = !isNaN(num) && val !== '' && val !== null && val !== undefined;
+            sheet[addr] = { t: isNumber ? 'n' : 's', v: isNumber ? num : (val ?? '') };
+        }
+        loadData();
+    </script>
+</body>
+</html>

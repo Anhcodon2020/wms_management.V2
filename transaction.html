@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Truy Vấn Giao Dịch SKU - WMS System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .search-container { display: flex; gap: 10px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .search-container input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; outline: none; }
+        .search-container input:focus { border-color: #3498db; }
+        .btn-search { padding: 0 30px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; }
+        .btn-search:hover { background: #2980b9; }
+
+        .transaction-section { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 30px; }
+        .section-title { font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #eee; display: flex; align-items: center; gap: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #f1f1f1; }
+        th { background-color: #f8f9fa; color: #7f8c8d; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+        tr:hover { background-color: #fcfcfc; }
+        
+        .empty-msg { text-align: center; color: #95a5a6; padding: 30px; font-style: italic; }
+        .qty-val { font-weight: bold; color: #2c3e50; }
+        .text-in { color: #27ae60; }
+        .text-out { color: #e67e22; }
+        .clickable-po { color: #3498db; cursor: pointer; text-decoration: underline; }
+        .clickable-po:hover { color: #2980b9; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound.html">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction" class="active">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>🔍 Truy Vấn Giao Dịch SKU</h2>
+            <span id="skuDisplay" style="font-weight: 600; color: #3498db;"></span>
+        </div>
+
+        <div class="search-container">
+            <input type="text" id="skuInput" placeholder="Nhập mã SKU cần tra cứu (ví dụ: ABC-123)..." onkeyup="if(event.key==='Enter') fetchTransactions()">
+            <button class="btn-search" onclick="fetchTransactions()">TÌM KIẾM</button>
+        </div>
+
+        <div id="resultsArea" style="display: none;">
+            <!-- PHẦN 1: INBOUND -->
+            <div class="transaction-section" style="border-top: 4px solid #27ae60;">
+                <div class="section-title"><span class="text-in">📥</span> Chi Tiết Nhập Kho (Inbound) <span style="font-size: 11px; font-weight: normal; margin-left: 10px; color: #7f8c8d;">(Click vào PO để lọc Outbound)</span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ngày Nhập</th>
+                            <th>Parent PO</th>
+                            <th>Số Cont/Xe</th>
+                            <th>Số Lượng (Carton)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inboundTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- PHẦN 2: OUTBOUND -->
+            <div class="transaction-section" style="border-top: 4px solid #e67e22;">
+                <div class="section-title" onclick="filterOutbound('')" style="cursor:pointer;" title="Click để hiện lại tất cả"><span class="text-out">📤</span> Chi Tiết Xuất Kho (Outbound) <span style="margin-left: auto; font-size: 14px; background: #e67e22; color: white; padding: 2px 12px; border-radius: 20px;">Tổng Carton: <span id="outboundTotal">0</span></span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Số Job No</th>
+                            <th>Ngày Nhận Rcv</th>
+                            <th>Số Parent PO</th>
+                            <th>Số Child PO</th>
+                            <th>Số Container</th>
+                            <th>Ngày Đóng Hàng</th>
+                            <th>Số Lượng (Carton)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outboundTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fetchTransactions() {
+            const sku = document.getElementById('skuInput').value.trim();
+            if (!sku) return;
+
+            document.getElementById('skuDisplay').innerText = `SKU: ${sku}`;
+            
+            fetch(`/api/transactions/sku/${encodeURIComponent(sku)}`)
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('resultsArea').style.display = 'block';
+                    
+                    // 1. Render Inbound
+                    const inBody = document.getElementById('inboundTableBody');
+                    if (data.inbound && data.inbound.length > 0) {
+                        inBody.innerHTML = data.inbound.map(item => `
+                            <tr>
+                                <td>${item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '-'}</td>
+                                <td><b class="clickable-po" onclick="filterOutbound('${item.po}')" title="Lọc dữ liệu xuất kho theo PO này">${item.po || '-'}</b></td>
+                                <td>${item.contxe || '-'}</td>
+                                <td class="qty-val text-in">${item.carton}</td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        inBody.innerHTML = '<tr><td colspan="4" class="empty-msg">Không có lịch sử nhập kho cho SKU này</td></tr>';
+                    }
+
+                    // 2. Render Outbound
+                    const outBody = document.getElementById('outboundTableBody');
+                    if (data.outbound && data.outbound.length > 0) {
+                        let initialTotal = 0;
+                        outBody.innerHTML = data.outbound.map(item => `
+                            <tr>
+                                <td><b class="text-out">${item.jobno}</b></td>
+                                <td>${item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '-'}</td>
+                                <td>${item.parentpo || '-'}</td>
+                                <td>${item.childpo || '-'}</td>
+                                <td>${item.container || '-'}</td>
+                                <td>${item.datestuff ? new Date(item.datestuff).toLocaleDateString('vi-VN') : '-'}</td>
+                                <td class="qty-val text-out">${item.carton}</td>
+                            </tr>
+                        `).join('');
+
+                        data.outbound.forEach(item => initialTotal += parseFloat(item.carton || 0));
+                        document.getElementById('outboundTotal').innerText = initialTotal;
+                    } else {
+                        outBody.innerHTML = '<tr><td colspan="6" class="empty-msg">Không có lịch sử xuất kho cho SKU này</td></tr>';
+                        document.getElementById('outboundTotal').innerText = '0';
+                    }
+                })
+                .catch(err => {
+                    console.error('Lỗi truy vấn:', err);
+                    alert('Không thể kết nối với server hoặc SKU không tồn tại.');
+                });
+        }
+
+        /**
+         * Hàm lọc bảng Outbound theo Parent PO
+         * @param {string} po - Mã PO cần lọc, nếu rỗng sẽ hiện tất cả
+         */
+        function filterOutbound(po) {
+            const rows = document.querySelectorAll('#outboundTableBody tr');
+            let filteredTotal = 0;
+            rows.forEach(row => {
+                if (row.cells.length < 7) return; // Bỏ qua dòng thông báo trống
+
+                // Cột Parent PO trong bảng Outbound là cột thứ 3 (index 2)
+                const cellPO = row.cells[2].innerText.trim();
+                if (!po || cellPO === po || cellPO === '-') {
+                    row.style.display = '';
+                    filteredTotal += parseFloat(row.cells[6].innerText) || 0;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            document.getElementById('outboundTotal').innerText = filteredTotal;
+        }
+    </script>
+</body>
+</html>

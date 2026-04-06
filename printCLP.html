@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In CLP - Container Stuffing Detail</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .no-print-zone { 
+            background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px;
+            position: sticky; top: 0; z-index: 1000;
+        }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-print { background: #2c3e50; color: white; }
+        .btn-print:hover { background: #1a252f; }
+        .btn-close { background: #95a5a6; color: white; }
+
+        @page { size: A4 landscape; margin: 5mm; }
+        
+        @media print {
+            .no-print-zone { display: none !important; }
+            body { background: none; padding: 0; }
+            .clp-page { box-shadow: none !important; margin: 0 !important; border: none !important; }
+        }
+
+        .clp-page { 
+            background: #fff;
+            width: 287mm; 
+            min-height: 183mm; 
+            margin: 0 auto 20px auto;
+            padding: 5mm; 
+            display: flex; 
+            flex-direction: column; 
+            box-sizing: border-box; 
+            gap: 6px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+        .clp-header { display: flex; align-items: center; border-bottom: 3px double #000; padding-bottom: 6px; }
+        .clp-logo { width: 130px; }
+        .clp-title-main { flex: 1; text-align: center; }
+        .clp-title-main h1 { margin: 0; font-size: 27px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
+        .clp-info-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 6px; font-size: 12px; border-bottom: 2px solid #000; padding-bottom: 6px; }
+        .clp-body { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1; }
+        .clp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .clp-table th, .clp-table td { border: 1px solid #000; padding: 2px 3px; font-size: 11px; text-align: center; height: 24px; line-height: 1.2; }
+        .clp-table th:nth-child(1) { width: 14%; }
+        .clp-table th:nth-child(2) { width: 30%; }
+        .clp-table th:nth-child(3) { width: 12%; }
+        .clp-table th:nth-child(4) { width: 44%; }
+        .pallet-type-cells { display: flex; justify-content: center; gap: 4px; }
+        .check-box { border: 1px solid #000; width: 20px; height: 20px; display: inline-block; font-size: 10px; line-height: 20px; font-weight: bold; }
+        .clp-footer { margin-top: 6px; padding-top: 10px; display: flex; gap: 20px; align-items: flex-start; border-top: 2px solid #000; }
+        .loose-table { width: 50%; border-collapse: collapse; table-layout: fixed;  }
+            .loose-table th, .loose-table td { border: 1px solid #000; padding: 3px 5px; font-size: 10px; text-align: center; height: 20px; }
+            .loose-table th:nth-child(1) { width: 10%; }
+            .loose-table th:nth-child(2) { width: 20%; }    
+            .loose-table th:nth-child(3) { width: 20%; }
+            .loose-table th:nth-child(4) { width: 60%; }
+        .clp-sign { flex: 1; text-align: center; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="no-print-zone">
+        <span style="font-weight: bold; color: #2c3e50;">Trang Xem Trước Bản In CLP</span>
+        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
+    </div>
+
+    <div id="printContainer"></div>
+
+    <script>
+        const rawData = localStorage.getItem('printCLPData');
+        if (!rawData) {
+            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu để in!</h1></div>";
+        } else {
+            const jobData = JSON.parse(rawData);
+
+            // Cập nhật tiêu đề trang để khi lưu PDF có tên file mặc định là CLP_jobno
+            if (jobData.length === 1) {
+                document.title = "CLP_" + jobData[0].jobNo;
+            } else if (jobData.length > 1) {
+                document.title = "CLP_Batch_Print";
+            }
+
+            const container = document.getElementById('printContainer');
+
+            jobData.forEach(job => {
+                const first = job.items[0] || {};
+                const stuffDate = first.datestuff ? new Date(first.datestuff).toLocaleDateString('vi-VN') : '-';
+                const fdcList = [...new Set(job.items.map(i => i.fdc || 'N/A'))].join(', ');
+                const totalJobCbm = job.items.reduce((sum, item) => sum + (parseFloat(item.cbm) || 0), 0).toFixed(3);
+
+                const renderTableSide = (sideName) => {
+                    let rowsHtml = '';
+                    for(let i=1; i<=12; i++) {
+                        rowsHtml += `<tr><td>${sideName}${i}</td><td></td><td></td><td><div class="pallet-type-cells"><span class="check-box">1.2</span><span class="check-box">1.6</span><span class="check-box">1.9</span><span class="check-box">L</span></div></td></tr>`;
+                    }
+                    return rowsHtml;
+                };
+
+                let looseRows = '';
+                // Lấy dữ liệu thực tế từ scanfile (đã được lọc theo jobno và pallet_type='loose')
+                const looseItems = job.scannedLooseItems || [];
+
+                // Đổi từ cộng tổng carton sang đếm số dòng (records) của hàng lẻ trong kế hoạch
+                const totalPlannedLoose = job.items.filter(item => (item.looscarton || '').toString().trim().toUpperCase() === 'Y').length;
+
+                if (looseItems.length > 0) {
+                    // Nhóm dữ liệu quét theo Job Scan và System Pallet để hiển thị mã Pallet vật lý
+                    const groupedByJob = looseItems.reduce((acc, item) => {
+                        const js = item.jobscan || 'N/A'; // Số đợt quét (Job Scan)
+                        const sysPallet = item.pallet || item.systempallet || 'N/A'; // Mã pallet hệ thống
+                        const fdcCode = (item.master_delivery || 'N/A').toString().substring(0, 3);
+                        
+                        // Key kết hợp để phân biệt các nhóm hàng lẻ
+                        const key = js + "_" + sysPallet + "_" + fdcCode;
+
+                        if (!acc[key]) {
+                            // Lookup sang danh sách Shipment Plan (job.items) để lấy Pallet Number vật lý
+                            const planItem = job.items.find(i => i.systempallet === sysPallet);
+                            const physicalNo = planItem ? (planItem.palletnumber || sysPallet) : sysPallet;
+                            // Tính CBM đơn vị từ kế hoạch
+                            const unitCbm = planItem ? (parseFloat(planItem.cbm) / (parseInt(planItem.carton) || 1)) : 0;
+
+                            acc[key] = {
+                                fdc: fdcCode,
+                                count: 0,
+                                palletNo: physicalNo,
+                                unitCbm: unitCbm
+                            };
+                        }
+                        acc[key].count++;
+                        return acc;
+                    }, {});
+
+                    let globalIdx = 0;
+                    let totalCbmLoose = 0;
+                    for (const key in groupedByJob) {
+                        globalIdx++;
+                        const info = groupedByJob[key];
+                        totalCbmLoose += (info.count * info.unitCbm);
+                        looseRows += `<tr><td>${globalIdx}</td><td>${info.fdc}</td><td>${info.count}</td><td>${info.palletNo}</td></tr>`;
+                    }
+
+                    // Cập nhật dòng tổng cộng để hiển thị số lượng record (dòng)
+                    looseRows += `
+                        <tr style="font-weight:bold; background-color:#f8f9fa;">
+                            <td colspan="2" style="text-align:right;">TỔNG CỘNG:</td>
+                            <td style="background-color: #fffbe6;"> QTY: ${job.scannedLooseQty}</td>
+                            <td style="background-color: #e6f7ff; text-align: left; padding-left: 10px;"> CBM: ${totalCbmLoose.toFixed(3)}</td>
+                        </tr>`;
+                } else {
+                    looseRows = '<tr><td colspan="3">- Không có hàng lẻ -</td></tr>';
+                }
+
+                container.innerHTML += `
+                    <div class="clp-page">
+                        <div class="clp-header">
+                            <div style="width: 150px;">
+                                <img src="logo.png" class="clp-logo" style="max-width: 100%;" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/b/b1/KLN_Logo.png'">
+                            </div>
+                            <div class="clp-title-main">
+                                <h1>CONTAINER STUFFING DETAIL</h1>
+                                <div style="font-weight:bold;">SƠ ĐỒ ĐÓNG HÀNG CONTAINER</div>
+                            </div>
+                            <div style="width: 150px;"></div>
+                        </div>
+                        <div class="clp-info-grid">
+                            <div><b>JOB NO:</b> ${job.jobNo}</div>
+                            <div><b>STUFFING DATE:</b> ${stuffDate}</div>
+                            <div><b>CONT NO:</b> ${first.container || '-'}</div>
+                            <div><b>SEAL NO:</b> ${first.seal || '-'}</div>
+                            <div><b>TOTAL CBM:</b> <span style="font-size:18px; font-weight:bold;">${totalJobCbm}</span></div>
+                            <div style="grid-column: span 3;"><b>FDC GROUP:</b> ${fdcList}</div>
+                            <div style="grid-column: span 2; text-align: right; color: #d35400;"><b>SCANNED LOOSE:</b> <span style="font-size:16px; font-weight:bold;">${job.scannedLooseQty}</span> carton</div>
+                        </div>
+                        <div class="clp-body">
+                            <div style="width:100%">
+                                <table class="clp-table">
+                                    <thead><tr><th>LEFT</th><th>PALLET NUMBER</th><th>FDC</th><th>LOẠI PALLET</th></tr></thead>
+                                    <tbody>${renderTableSide('L')}</tbody>
+                                </table>
+                            </div>
+                            <div style="width:100%">
+                                <table class="clp-table">
+                                    <thead><tr><th>RIGHT</th><th>PALLET NUMBER</th><th>FDC</th><th>LOẠI PALLET</th></tr></thead>
+                                    <tbody>${renderTableSide('R')}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="clp-footer">
+                            <div style="flex: 4;">
+                                <div style="font-weight:bold; margin-bottom:5px; text-decoration: underline; font-size: 14px;">CHI TIẾT LOOSE CARTON (FDC ):</div>
+                                <table class="loose-table">
+                                    <thead><tr><th>STT</th><th>FDC</th><th>Số carton</th><th>Số pallet number</th></tr></thead>
+                                    <tbody>${looseRows}</tbody>
+                                </table>
+                            </div>
+                            <div class="clp-sign">XÁC NHẬN CỦA KHO<br><br><br><br>(Ký & Ghi rõ họ tên)</div>
+                        </div>
+                    </div>`;
+            });
+        }
+    </script>
+</body>
+</html>

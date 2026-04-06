@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Quản Lý Kho</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .card-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+        
+        .stat-card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-left: 5px solid #3498db; }
+        .stat-card h3 { margin: 0 0 10px 0; color: #7f8c8d; font-size: 14px; text-transform: uppercase; }
+        .stat-card .value { font-size: 28px; font-weight: bold; color: #2c3e50; }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/clp">🚢 Quản Lý CLP</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound.html">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+            <li><a href="#">⚙️ Cài Đặt</a></li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="header">
+            <h2>Bảng Điều Khiển</h2>
+            <span>Xin chào, Admin 👋</span>
+        </div>
+
+        <div class="card-container">
+            <div class="stat-card" style="border-left-color: #3498db;">
+                <h3>Tổng sản phẩm</h3>
+                <div class="value" id="totalProducts">...</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #2ecc71;">
+                <h3>Đơn nhập hôm nay</h3>
+                <div class="value" id="inboundToday">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM: <span id="inboundTodayCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #f1c40f;">
+                <h3>Tổng nhập tuần này</h3>
+                <div class="value" id="inboundWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM: <span id="inboundWeekCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #d35400;">
+                <h3>Tổng xuất tuần trước</h3>
+                <div class="value" id="outboundLastWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM: <span id="outboundLastWeekCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #e67e22;">
+                <h3>Tổng xuất tuần này</h3>
+                <div class="value" id="outboundWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">
+                    CBM: <span id="outboundWeekCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³
+                    <span id="cbmGrowth" style="margin-left: 5px; font-weight: bold; font-size: 12px; padding: 2px 6px; border-radius: 4px;"></span>
+                </div>
+            </div>
+            <div class="stat-card" style="border-left-color: #1abc9c;">
+                <h3>Filling Rate (Tuần này)</h3>
+                <div class="value" id="fillingRate">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">Dựa trên <span id="weekContCount" style="font-weight: bold; color: #2c3e50;">0</span> Container</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #16a085;">
+                <h3>Filling Rate (Tuần trước)</h3>
+                <div class="value" id="fillingRateLastWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">Dựa trên <span id="lastWeekContCount" style="font-weight: bold; color: #2c3e50;">0</span> Container</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #9b59b6;">
+                <h3>Forecast Tuần Này</h3>
+                <div class="value" id="forecastThisWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM: <span id="forecastThisWeekCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #8e44ad;">
+                <h3>Forecast Tuần Sau</h3>
+                <div class="value" id="forecastNextWeek">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM: <span id="forecastNextWeekCbm" style="font-weight: bold; color: #2c3e50;">...</span> m³</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #e74c3c;">
+                <h3>Cảnh báo tồn kho</h3>
+                <div class="value" id="inventoryAlerts">...</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h3 style="margin: 0 0 20px 0; color: #2c3e50;">Xu hướng CBM nhập kho (7 ngày gần nhất)</h3>
+            <canvas id="inboundChart" height="80"></canvas>
+        </div>
+
+        <div style="margin-top: 30px; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h3 style="margin: 0 0 20px 0; color: #2c3e50;">Tỷ lệ CBM nhập kho theo Nhà cung cấp (Tháng này)</h3>
+            <canvas id="supplierCbmPieChart" height="150"></canvas>
+        </div>
+
+        <div style="margin-top: 30px; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h3 style="margin: 0 0 20px 0; color: #2c3e50;">Hiệu suất đóng hàng - Filling Rate (4 tuần gần nhất)</h3>
+            <canvas id="fillingRateChart" height="80"></canvas>
+        </div>
+
+        <div style="margin-top: 30px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #2c3e50;">Chi tiết nhập kho tuần này</h3>
+                <span id="weekRange" style="font-size: 14px; color: #7f8c8d; background: #f8f9fa; padding: 5px 12px; border-radius: 20px; border: 1px solid #eee;">...</span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #eee; text-align: left;">
+                        <th style="padding: 10px;">Ngày</th>
+                        <th style="padding: 10px;">Thứ</th>
+                        <th style="padding: 10px;">Số lượng (Carton)</th>
+                        <th style="padding: 10px;">CBM</th>
+                    </tr>
+                </thead>
+                <tbody id="weeklyBreakdownBody">
+                    <tr><td colspan="3" style="text-align: center; padding: 20px; color: #888;">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchDashboardStats();
+            fetchWeeklyBreakdown();
+            fetchInboundTrend();
+            fetchInboundCbmBySupplier(); // Gọi hàm mới để tải biểu đồ hình tròn
+            fetchFillingRateTrend(); // Tải biểu đồ Filling Rate
+            displayWeekRange();
+        });
+
+        function fetchDashboardStats() {
+            fetch('/api/dashboard/stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    
+                    document.getElementById('totalProducts').innerText = (data.total_products || 0).toLocaleString();
+                    document.getElementById('inboundToday').innerText = (data.inbound_today || 0).toLocaleString();
+                    document.getElementById('inboundTodayCbm').innerText = (data.inbound_today_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    document.getElementById('inboundWeek').innerText = (data.inbound_week || 0).toLocaleString();
+                    document.getElementById('inboundWeekCbm').innerText = (data.inbound_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    document.getElementById('outboundWeek').innerText = (data.outbound_week || 0).toLocaleString();
+                    document.getElementById('outboundWeekCbm').innerText = (data.outbound_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    document.getElementById('outboundLastWeek').innerText = (data.outbound_last_week || 0).toLocaleString();
+                    document.getElementById('outboundLastWeekCbm').innerText = (data.outbound_last_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    
+                    // Tính Filling Rate Tuần này
+                    const rate = (data.outbound_week_cont || 0) > 0 ? ((data.outbound_week_cbm || 0) / data.outbound_week_cont) : 0;
+                    document.getElementById('fillingRate').innerText = rate.toLocaleString(undefined, { minimumFractionDigits: 2 }) + ' m³/Cont';
+                    document.getElementById('weekContCount').innerText = data.outbound_week_cont || 0;
+
+                    // Tính Filling Rate Tuần trước
+                    const rateLast = (data.outbound_last_week_cont || 0) > 0 ? ((data.outbound_last_week_cbm || 0) / data.outbound_last_week_cont) : 0;
+                    document.getElementById('fillingRateLastWeek').innerText = rateLast.toLocaleString(undefined, { minimumFractionDigits: 2 }) + ' m³/Cont';
+                    document.getElementById('lastWeekContCount').innerText = data.outbound_last_week_cont || 0;
+
+                    // Tính tỷ lệ tăng trưởng CBM (%)
+                    const currCbm = data.outbound_week_cbm || 0;
+                    const lastCbm = data.outbound_last_week_cbm || 0;
+                    if (lastCbm > 0) {
+                        const growth = ((currCbm - lastCbm) / lastCbm) * 100;
+                        const growthEl = document.getElementById('cbmGrowth');
+                        growthEl.innerText = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '%';
+                        growthEl.style.backgroundColor = growth >= 0 ? '#d4edda' : '#f8d7da';
+                        growthEl.style.color = growth >= 0 ? '#155724' : '#721c24';
+                    }
+
+                    document.getElementById('forecastThisWeek').innerText = (data.forecast_this_week || 0).toLocaleString();
+                    document.getElementById('forecastThisWeekCbm').innerText = (data.forecast_this_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    document.getElementById('forecastNextWeek').innerText = (data.forecast_next_week || 0).toLocaleString();
+                    document.getElementById('forecastNextWeekCbm').innerText = (data.forecast_next_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
+                    document.getElementById('inventoryAlerts').innerText = (data.alerts || 0).toLocaleString();
+                })
+                .catch(err => {
+                    console.error('Lỗi tải thống kê:', err);
+                });
+        }
+
+        function fetchWeeklyBreakdown() {
+            fetch('/api/dashboard/weekly-breakdown')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.error) throw new Error(data.error);
+                    if (!Array.isArray(data)) throw new Error("Dữ liệu trả về không hợp lệ");
+                    
+                    const tbody = document.getElementById('weeklyBreakdownBody');
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">Không có dữ liệu nhập kho tuần này.</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.map(row => `
+                        <tr style="border-bottom: 1px solid #eee;">
+                            <td style="padding: 10px;">${row.date}</td>
+                            <td style="padding: 10px;">${row.day_name}</td>
+                            <td style="padding: 10px; font-weight: bold; color: #2ecc71;">${row.total_carton.toLocaleString()}</td>
+                            <td style="padding: 10px; font-weight: bold; color: #3498db;">${row.total_cbm.toLocaleString(undefined, { minimumFractionDigits: 3 })}</td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(err => console.error('Lỗi tải chi tiết tuần:', err));
+        }
+
+        function displayWeekRange() {
+            const now = new Date();
+            // Lấy ngày hiện tại trong tuần (0: CN, 1: T2, ..., 6: T7)
+            // Chuyển sang (1: T2, ..., 7: CN) để khớp với YEARWEEK mode 1
+            const day = now.getDay() || 7; 
+            
+            const monday = new Date(now);
+            monday.setDate(now.getDate() - day + 1);
+            
+            const sunday = new Date(now);
+            sunday.setDate(now.getDate() - day + 7);
+
+            const format = (d) => d.getDate().toString().padStart(2, '0') + '/' + (d.getMonth() + 1).toString().padStart(2, '0');
+            document.getElementById('weekRange').innerText = `Tuần này: ${format(monday)} - ${format(sunday)}`;
+        }
+
+        function fetchInboundTrend() {
+            fetch('/api/dashboard/inbound-trend')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.error) throw new Error(data.error);
+                    if (!Array.isArray(data)) throw new Error("Dữ liệu trả về không hợp lệ");
+                    
+                    const ctx = document.getElementById('inboundChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(d => d.date_label),
+                            datasets: [{
+                                label: 'Tổng CBM',
+                                data: data.map(d => d.total_cbm),
+                                borderColor: '#3498db',
+                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                                borderWidth: 3,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#3498db'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { callback: value => value.toFixed(2) + ' m³' }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Lỗi tải biểu đồ:', err));
+        }
+    </script>
+    <script>
+        function fetchInboundCbmBySupplier() {
+            fetch('/api/dashboard/inbound-cbm-by-supplier')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.error) throw new Error(data.error);
+                    if (!Array.isArray(data)) throw new Error("Dữ liệu trả về không hợp lệ");
+                    
+                    const ctx = document.getElementById('supplierCbmPieChart').getContext('2d');
+                    
+                    const labels = data.map(d => d.supplier_name);
+                    const cbmData = data.map(d => d.total_cbm);
+
+                    // Tạo mảng màu sắc ngẫu nhiên cho biểu đồ hình tròn
+                    const backgroundColors = data.map(() => `hsl(${Math.random() * 360}, 70%, 60%)`);
+
+                    new Chart(ctx, {
+                        type: 'pie',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: cbmData,
+                                backgroundColor: backgroundColors,
+                                hoverOffset: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'right', // Đặt chú giải bên phải
+                                    labels: {
+                                        font: {
+                                            size: 12
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.label || '';
+                                            if (label) label += ': ';
+                                            if (context.parsed !== null) label += context.parsed.toFixed(3) + ' m³';
+                                            return label;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Lỗi tải biểu đồ CBM theo NCC:', err));
+        }
+
+        function fetchFillingRateTrend() {
+            fetch('/api/dashboard/filling-rate-trend')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.error) throw new Error(data.error);
+                    if (!Array.isArray(data)) throw new Error("Dữ liệu trả về không hợp lệ");
+
+                    const ctx = document.getElementById('fillingRateChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.map(d => d.week_label),
+                            datasets: [{
+                                label: 'Filling Rate (m³/Cont)',
+                                data: data.map(d => d.filling_rate),
+                                backgroundColor: data.map(d => {
+                                    return d.filling_rate < 56.5 ? 'rgba(231, 76, 60, 0.8)' : 'rgba(26, 188, 156, 0.7)';
+                                }),
+                                borderColor: data.map(d => d.filling_rate < 56.5 ? '#c0392b' : '#16a085'),
+                                borderWidth: 1,
+                                borderRadius: 5,
+                                barThickness: 40
+                            },
+                            {
+                                label: 'KPI Mục tiêu (56.5 m³)',
+                                data: data.map(() => 56.5),
+                                type: 'line',
+                                borderColor: '#e74c3c',
+                                borderWidth: 2,
+                                borderDash: [10, 5], // Tạo nét đứt
+                                pointRadius: 0,
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 10 } },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) label += ': ';
+                                            if (context.parsed.y !== null) {
+                                                label += context.parsed.y.toFixed(2) + ' m³';
+                                                if (context.datasetIndex === 0 && context.parsed.y < 56.5) {
+                                                    label += ' (⚠ Dưới KPI)';
+                                                }
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: { display: true, text: 'm³ / Container' },
+                                    ticks: { callback: value => value.toFixed(1) }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Lỗi tải biểu đồ Filling Rate:', err));
+        }
+    </script>
+
+</body>
+</html>

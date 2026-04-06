@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Picking List - WMS</title>
+    <!-- Thư viện Xuất Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Times New Roman', serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .no-print-zone { 
+            background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px;
+            position: sticky; top: 0; z-index: 1000;
+        }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-print { background: #8e44ad; color: white; }
+        .btn-close { background: #95a5a6; color: white; }
+
+        @page { size: A4 portrait; margin: 10mm; }
+        
+        @media print {
+            .no-print-zone { display: none !important; }
+            body { background: none; padding: 0; }
+            .picking-page { box-shadow: none !important; margin: 0 !important; border: none !important; page-break-after: always; }
+        }
+
+        .picking-page { 
+            background: #fff;
+            width: 210mm; 
+            min-height: 277mm; 
+            margin: 0 auto 20px auto;
+            padding: 10mm; 
+            box-sizing: border-box; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .picking-header { border-bottom: 3px double #000; margin-bottom: 20px; padding-bottom: 10px; }
+        .picking-title-box { display: flex; justify-content: space-between; align-items: center; }
+        .job-box { text-align: right; border: 2px solid #000; padding: 5px 15px; min-width: 150px; }
+        .picking-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+        .picking-table th, .picking-table td { border: 1px solid black; padding: 6px 4px; text-align: left; }
+        .picking-table th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; }
+        .fdc-group-title { background-color: #eee; font-weight: bold; padding: 5px; margin-top: 15px; border: 1px solid #000; font-size: 14px; }
+        .total-row { font-weight: bold; background-color: #fafafa; }
+        .footer-note { margin-top: 30px; font-style: italic; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="no-print-zone">
+        <span style="font-weight: bold; color: #8e44ad;">Xem Trước Bản In Picking List</span>
+        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <button class="btn" style="background: #27ae60; color: white;" onclick="exportPickingToExcel()">📊 XUẤT EXCEL</button>
+        <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
+    </div>
+
+    <div id="printContainer"></div>
+
+    <script>
+        function exportPickingToExcel() {
+            const raw = localStorage.getItem('printPickingData');
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            let exportData = [];
+            data.forEach(job => {
+                job.items.forEach(item => {
+                    exportData.push({
+                        "Job No": job.jobNo,
+                        "FDC": item.fdc || 'N/A',
+                        "Parent PO": item.parentpo || '',
+                        "Child PO": item.childpo || '',
+                        "SKU": item.sku || '',
+                        "Vị trí": item.lct || '',
+                        "Carton": parseFloat(item.carton) || 0,
+                        "CBM": parseFloat(item.cbm) || 0
+                    });
+                });
+            });
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "PickingList");
+            XLSX.writeFile(wb, document.title + ".xlsx");
+        }
+
+        function mapChipboardName(val) {
+            if (!val) return '-';
+            const s = val.toString();
+            if (s.includes('1910')) return '1.9';
+            if (s.includes('1210')) return '1.2';
+            if (s.includes('1610')) return '1.6';
+            return s;
+        }
+
+        const rawData = localStorage.getItem('printPickingData');
+        if (!rawData) {
+            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu Picking!</h1></div>";
+        } else {
+            const jobData = JSON.parse(rawData);
+            
+            if (jobData.length === 1) {
+                document.title = "PickingList_" + jobData[0].jobNo;
+            } else {
+                document.title = "PickingList_Batch";
+            }
+
+            const container = document.getElementById('printContainer');
+
+            jobData.forEach(job => {
+                if (!job.items || job.items.length === 0) return;
+                
+                const first = job.items[0];
+                const rcvDate = first.datercv ? new Date(first.datercv).toLocaleDateString('vi-VN') : '-';
+                const looseCount = job.items.filter(item => (item.looscarton || '').toString().toUpperCase() === 'Y').length;
+
+                // Gom nhóm theo FDC
+                const groups = {};
+                job.items.forEach(item => {
+                    const fdc = item.fdc || 'N/A';
+                    if (!groups[fdc]) groups[fdc] = [];
+                    groups[fdc].push(item);
+                });
+
+                let jobHtml = `
+                    <div class="picking-page">
+                        <div class="picking-header">
+                            <div class="picking-title-box">
+                                <h1 style="margin:0;">PICKING LIST</h1>
+                                <div class="job-box">
+                                    <div style="font-size: 10px;">JOB NUMBER</div>
+                                    <div style="font-size: 22px; font-weight: bold;">${job.jobNo}</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-top:15px; font-size: 13px;">
+                                <span>📅 <b>Ngày nhận:</b> ${rcvDate}</span>
+                                <span>🕒 <b>Ngày in:</b> ${new Date().toLocaleDateString('vi-VN')}</span>
+                            </div>
+                        </div>`;
+
+                let jobTotalCarton = 0;
+                let jobTotalCbm = 0;
+                for (const fdc in groups) {
+                    // Sắp xếp: Parent PO -> SKU
+                    groups[fdc].sort((a, b) => {
+                        if (a.parentpo !== b.parentpo) return String(a.parentpo || '').localeCompare(String(b.parentpo || ''));
+                        return String(a.sku || '').localeCompare(String(b.sku || ''));
+                    });
+
+                    jobHtml += `
+                        <div class="fdc-group-title">FDC: ${fdc}</div>
+                        <table class="picking-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:12%">Parent PO</th>
+                                    <th style="width:12%">Child PO</th>
+                                    <th style="width:22%">SKU</th>
+                                    <th style="width:12%">Vị trí</th>
+                                    <th style="width:8%">Bảng</th>
+                                    <th style="width:10%">Carton</th>
+                                    <th style="width:10%">CBM</th>
+                                    <th style="width:8%">Chip</th>
+                                    <th style="width:12%">Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                    
+                    let fdcCarton = 0, fdcCbm = 0;
+                    groups[fdc].forEach(row => {
+                        fdcCarton += parseFloat(row.carton || 0);
+                        fdcCbm += parseFloat(row.cbm || 0);
+                        jobHtml += `
+                            <tr>
+                                <td>${row.parentpo || '-'}</td>
+                                <td>${row.childpo || '-'}</td>
+                                <td><b>${row.sku}</b></td>
+                                <td>${row.lct || '-'}</td>
+                                <td style="text-align:center">${row.looscarton || 'N'}</td>
+                                <td style="text-align:center; font-weight:bold">${row.carton}</td>
+                                <td>${parseFloat(row.cbm || 0).toFixed(3)}</td>
+                                <td style="text-align:center">${mapChipboardName(row.chipboard)}</td>
+                                <td>${row.remark || ''}</td>
+                            </tr>`;
+                    });
+                    
+                    jobTotalCarton += fdcCarton;
+                    jobTotalCbm += fdcCbm;
+
+                    jobHtml += `
+                            <tr class="total-row">
+                                <td colspan="5" style="text-align:right">Tổng ${fdc}:</td>
+                                <td style="text-align:center">${fdcCarton}</td>
+                                <td colspan="3">${fdcCbm.toFixed(3)}</td>
+                            </tr>
+                        </tbody></table>`;
+                }
+
+                jobHtml += `
+                    <div style="margin-top:15px; padding:10px; border:2px solid #000; text-align:right; font-size:16px;">
+                        <b>TỔNG CỘNG TOÀN JOB: <span style="color:#8e44ad;">${jobTotalCarton}</span> Carton | <span style="color:#27ae60;">${jobTotalCbm.toFixed(3)}</span> CBM</b>
+                    </div>
+                    <div class="footer-note">
+                        * Ghi chú: Nhân viên kho kiểm tra kỹ SKU và số lượng khi lấy hàng. Mọi sai sót phải báo ngay cho quản lý.
+                    </div>
+                </div>`;
+                
+                container.innerHTML += jobHtml;
+            });
+        }
+    </script>
+</body>
+</html>

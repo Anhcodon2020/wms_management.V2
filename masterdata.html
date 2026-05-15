@@ -219,15 +219,14 @@
             });
         }
 
-        // Ham tu dong tinh CBM = (L*W*H)/1M * So luong
+        // Ham tu dong tinh CBM = (L*W*H)/1M
         function calculateCBM() {
             const l = parseFloat(document.getElementById('length').value) || 0;
             const w = parseFloat(document.getElementById('width').value) || 0;
             const h = parseFloat(document.getElementById('height').value) || 0;
-            const qty = parseFloat(document.getElementById('quantity').value) || 0;
 
             if (l > 0 && w > 0 && h > 0) {
-                const cbm = ((l * w * h) / 1000000) * qty;
+                const cbm = (l * w * h) / 1000000;
                 document.getElementById('cbm').value = cbm.toFixed(4);
             }
         }

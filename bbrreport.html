@@ -101,6 +101,7 @@
             <li><a href="/inbound">📥 Nhập Kho</a></li>
             <li><a href="/outbound">📤 Xuất Kho</a></li>
             <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+            <li><a href="/tcr">📝 Quản Lý TCR</a></li>
         </ul>
     </div>
 
@@ -194,6 +195,7 @@
                         <th>Item</th>
                         <th>Tên nhà cung cấp</th>
                         <th>Số Lượng</th>
+                        <th>CBM (MD)</th>
                         <th>Total CBM</th>
                         <th>Ngày Giao</th>
                         <th>Chipboard</th>
@@ -205,7 +207,7 @@
                     </tr>
                 </thead>
                 <tbody id="dataTable">
-                    <tr><td colspan="14" class="empty-row">Đang tải dữ liệu...</td></tr>
+                    <tr><td colspan="17" class="empty-row">Đang tải dữ liệu...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -307,6 +309,22 @@
         </div>
     </div>
 
+    <!-- Modal Xác Nhận Xóa 1 Dòng BBR -->
+    <div id="deleteItemConfirmModal" class="modal">
+        <div class="modal-content" style="width: 450px; text-align: center;">
+            <div class="modal-header" style="color: #e74c3c; border-bottom: 2px solid #e74c3c;">⚠️ Xác Nhận Xóa Dữ Liệu</div>
+            <div style="margin: 25px 0; font-size: 15px; line-height: 1.6;">
+                Bạn có chắc chắn muốn xóa dòng dữ liệu BBR này không?<br>
+                <b id="deleteItemTarget" style="color: #e74c3c; font-size: 18px;"></b>
+                <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">(Lưu ý: Hành động này không thể hoàn tác)</p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+                <button class="btn-cancel" onclick="closeDeleteItemModal()" style="background: #bdc3c7; color: white; width: 120px; margin-top: 0; font-weight: bold; border-radius: 5px;">HỦY BỎ</button>
+                <button class="btn-submit" onclick="executeDeleteItem()" style="background: #e74c3c; width: 120px; margin-top: 0; font-weight: bold; border-radius: 5px;">XÓA NGAY</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Tien Do Import (Progress Bar) -->
     <div id="progressModal" class="modal" style="z-index: 2000;">
         <div class="modal-content" style="width: 400px; text-align: center; padding-top: 40px;">
@@ -397,8 +415,10 @@
                 let supplierStats = {}; // Bien luu thong ke theo NCC
 
                 data.forEach((item, index) => {
-                    // Tinh Total CBM cho tung dong va cong don vao Tong Cong
-                    const lineTotal = parseFloat(item.total_cbm || (item.qty * item.cbm) || 0);
+                    // Lấy CBM từ Master Data (ưu tiên), nếu không có thì lấy từ dữ liệu BBR cũ
+                    const actualCbm = (item.mapped_cbm !== null && item.mapped_cbm !== undefined) ? parseFloat(item.mapped_cbm) : parseFloat(item.cbm || 0);
+                    // Tính Total CBM dựa trên Qty * CBM
+                    const lineTotal = parseFloat(item.qty || 0) * actualCbm;
                     grandTotal += lineTotal;
 
                     // Mapping loai pallet
@@ -462,7 +482,8 @@
                         <td>${item.item}</td>
                         <td><span style="color:#666; font-style:italic;">${item.name_doc || ''}</span></td>
                         <td>${item.qty}</td>
-                        <td>${lineTotal.toFixed(3)}</td>
+                        <td>${actualCbm.toFixed(4)} ${item.mapped_cbm !== null ? '<span class="pallet-tag" title="Từ Master Data">MD</span>' : ''}</td>
+                        <td><b style="color:#2ecc71;">${lineTotal.toFixed(3)}</b></td>
                         <td>${dDate}</td>
                         <td>${item.mapped_chipboard || '-'}</td>
                         <td style="font-weight:bold; color:#d35400;">${palletNeed > 0 ? palletNeed.toFixed(2) : '-'}</td>
@@ -475,6 +496,7 @@
                         <td>
                             <button style="padding:5px; background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer;" onclick='openModal(currentData[${index}])' title="Sửa dòng này">Sửa</button>
                             <button style="padding:5px; background:#e74c3c; color:white; border:none; border-radius:3px; cursor:pointer; margin-left:5px;" onclick="deleteBBRByParent('${item.parentpo}')" title="Xóa toàn bộ các dòng có cùng Parent PO này">Xóa Parent</button>
+                            ${['receiving', 'partial'].includes((item.status || '').trim().toLowerCase()) ? `<button style="padding:5px; background:#c0392b; color:white; border:none; border-radius:3px; cursor:pointer; margin-left:5px;" onclick="deleteBBRItem(${item.id}, '${item.po} - ${item.item}')" title="Xóa dòng này">Xóa</button>` : ''}
                         </td>
                     `;
                     tb.appendChild(tr);
@@ -541,6 +563,8 @@
         function getStatusColor(status) {
             if(status === 'New') return '#3498db';
             if(status === 'Pending') return '#f39c12';
+            if(status === 'Partial') return '#e67e22';
+            if(status === 'Receiving') return '#27ae60';
             if(status === 'Completed') return '#2ecc71';
             if(status === 'Cancelled') return '#e74c3c';
             return '#95a5a6';
@@ -636,7 +660,8 @@
             
             // Chuan bi du lieu chi tiet (Sheet 2)
             const exportDetails = dataToProcess.map(item => {
-                const lineTotal = parseFloat(item.total_cbm || (item.qty * item.cbm) || 0);
+                const actualCbm = (item.mapped_cbm !== null && item.mapped_cbm !== undefined) ? parseFloat(item.mapped_cbm) : parseFloat(item.cbm || 0);
+                const lineTotal = parseFloat(item.qty || 0) * actualCbm;
                 stats.total += lineTotal;
 
                 // Mapping lai de phan loai
@@ -679,11 +704,10 @@
 
                 return {
                     "DC": item.po ? parseInt(item.po.substring(0, 3)) : '',
-                    "PO": item.po, 
                     "Parent PO": item.parentpo || '',
                     "Hub DC": item.hubdc || item.hub_DC || '',
                     "PO": item.po, "Item": item.item, "NCC": item.supplier, "Name Doc": item.name_doc || '', "Ngày Giao": item.deliverydate ? item.deliverydate.split('T')[0] : '',
-                    "Số Lượng": item.qty, "CBM": item.cbm, "Tổng CBM": lineTotal,
+                    "Số Lượng": item.qty, "CBM (MD)": actualCbm, "Tổng CBM": lineTotal,
                     "Chipboard": cb || '', "Pallet Cần": palletNeed > 0 ? palletNeed.toFixed(2) : 0,
                     "Loại Pallet (Gốc)": item.kindpallet || '', "Loại Pallet (Map)": item.mapped_kindpallet || '', "Phân Loại": group, "Đã Xuất": item.is_exported ? 'Y' : 'N', "Trạng Thái": item.status
                 };
@@ -839,6 +863,37 @@
 
         // --- CHỨC NĂNG MỚI: XÓA BBR THEO PARENT PO ---
         let poToDelete = ''; // Biến lưu PO tạm thời để xóa
+        let itemToDeleteId = null; // Biến lưu ID dòng cần xóa
+
+        function deleteBBRItem(id, itemInfo) {
+            itemToDeleteId = id;
+            document.getElementById('deleteItemTarget').innerText = itemInfo || ('ID: ' + id);
+            
+            const modal = document.getElementById('deleteItemConfirmModal');
+            const content = modal.querySelector('.modal-content');
+            
+            content.classList.remove('shake');
+            void content.offsetWidth;
+            content.classList.add('shake');
+            
+            modal.style.display = 'flex';
+        }
+
+        function closeDeleteItemModal() {
+            document.getElementById('deleteItemConfirmModal').style.display = 'none';
+            itemToDeleteId = null;
+        }
+
+        async function executeDeleteItem() {
+            if (!itemToDeleteId) return;
+            const id = itemToDeleteId;
+            closeDeleteItemModal();
+            
+            fetch(`/api/bbr/${id}`, { method: 'DELETE' })
+                .then(async r => { if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server'); return r.json(); })
+                .then(result => { showToast(result.message); loadData(); })
+                .catch(err => showToast(err.message, 'error'));
+        }
 
         async function deleteBBRByParent(poFromRow = null) {
             const parentpo = poFromRow || document.getElementById('deleteParentInput').value.trim();

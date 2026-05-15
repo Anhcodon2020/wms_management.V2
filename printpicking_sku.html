@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Picking List theo SKU - WMS</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Times New Roman', serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .no-print-zone {
+            background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px;
+            position: sticky; top: 0; z-index: 1000;
+        }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-print { background: #9b59b6; color: white; }
+        .btn-close { background: #95a5a6; color: white; }
+
+        @page { size: A4 portrait; margin: 10mm; }
+
+        @media print {
+            .no-print-zone { display: none !important; }
+            body { background: none; padding: 0; }
+            .picking-page {
+                box-shadow: none !important;
+                margin: 0 !important;
+                border: none !important;
+                page-break-after: always;
+                break-after: page;
+            }
+            .picking-page:last-child { page-break-after: auto; break-after: auto; }
+        }
+
+        .picking-page {
+            background: #fff;
+            width: 210mm;
+            min-height: 277mm;
+            margin: 0 auto 20px auto;
+            padding: 10mm;
+            box-sizing: border-box;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .picking-header { border-bottom: 3px double #000; margin-bottom: 20px; padding-bottom: 10px; }
+        .picking-title-box { display: flex; justify-content: space-between; align-items: center; }
+        .job-box { text-align: right; border: 2px solid #000; padding: 5px 15px; min-width: 150px; }
+        .picking-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        .picking-table th, .picking-table td { border: 1px solid black; padding: 8px 5px; text-align: left; }
+        .picking-table th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; }
+        .total-row { font-weight: bold; background-color: #eee; }
+        .footer-note { margin-top: 30px; font-style: italic; font-size: 12px; border-top: 1px solid #ddd; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="no-print-zone">
+        <span style="font-weight: bold; color: #9b59b6;">Xem Trước Bản In Picking List (Gom theo SKU)</span>
+        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
+    </div>
+
+    <div id="printContainer"></div>
+
+    <script>
+        const rawData = localStorage.getItem('printPickingData');
+        if (!rawData) {
+            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu!</h1></div>";
+        } else {
+            const jobData = JSON.parse(rawData);
+            document.title = "PickingList_SKU_Summary";
+            const container = document.getElementById('printContainer');
+
+            jobData.forEach(job => {
+                if (!job.items || job.items.length === 0) return;
+
+                const rcvDate = job.items[0].datercv ? new Date(job.items[0].datercv).toLocaleDateString('vi-VN') : '-';
+
+                // --- LOGIC GROUP BY SKU ---
+                const skuGroups = {};
+                job.items.forEach(item => {
+                    const sku = item.sku || 'N/A';
+                    if (!skuGroups[sku]) {
+                        skuGroups[sku] = {
+                            sku: sku,
+                            totalCarton: 0,
+                            totalCbm: 0,
+                            locations: new Set(),
+                            dcSummary: {},
+                            chipboards: new Set()
+                        };
+                    }
+                    skuGroups[sku].totalCarton += parseFloat(item.carton || 0);
+                    skuGroups[sku].totalCbm += parseFloat(item.cbm || 0);
+                    if (item.lct) skuGroups[sku].locations.add(item.lct);
+                    
+                    // Gom nhóm theo DC (FDC)
+                    const dc = item.fdc || 'N/A';
+                    skuGroups[sku].dcSummary[dc] = (skuGroups[sku].dcSummary[dc] || 0) + parseFloat(item.carton || 0);
+                    
+                    if (item.chipboard) skuGroups[sku].chipboards.add(item.chipboard);
+                });
+
+                // Sắp xếp theo SKU alphabet
+                const sortedSkus = Object.values(skuGroups).sort((a, b) => a.sku.localeCompare(b.sku));
+
+                let tableRows = '';
+                let grandCarton = 0;
+                let grandCbm = 0;
+
+                sortedSkus.forEach(group => {
+                    grandCarton += group.totalCarton;
+                    grandCbm += group.totalCbm;
+                    
+                    // Tạo chuỗi hiển thị DC: Qty
+                    const dcText = Object.entries(group.dcSummary)
+                        .map(([dc, qty]) => `<span style="white-space:nowrap"><b>${dc}</b>: ${qty}</span>`)
+                        .join(', ');
+
+                    tableRows += `
+                        <tr>
+                            <td><b style="font-size:15px;">${group.sku}</b></td>
+                            <td style="text-align:center; font-weight:bold; font-size:16px;">${group.totalCarton}</td>
+                            <td>${group.totalCbm.toFixed(3)}</td>
+                            <td>${Array.from(group.locations).join(', ') || '-'}</td>
+                            <td style="font-size:12px;">${dcText}</td>
+                            <td style="text-align:center;">${Array.from(group.chipboards).join(', ') || '-'}</td>
+                        </tr>`;
+                });
+
+                container.innerHTML += `
+                    <div class="picking-page">
+                        <div class="picking-header">
+                            <div class="picking-title-box">
+                                <h1 style="margin:0;">PICKING LIST (BY SKU)</h1>
+                                <div class="job-box">
+                                    <div style="font-size: 10px;">JOB NUMBER</div>
+                                    <div style="font-size: 22px; font-weight: bold;">${job.jobNo}</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-top:15px; font-size: 13px;">
+                                <span><b>Ngày nhận:</b> ${rcvDate}</span>
+                                <span><b>Ngày in:</b> ${new Date().toLocaleDateString('vi-VN')}</span>
+                            </div>
+                        </div>
+                        <table class="picking-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:20%">Mã SKU</th>
+                                    <th style="width:10%; text-align:center;">Tổng Carton</th>
+                                    <th style="width:10%">Tổng CBM</th>
+                                    <th style="width:15%">Vị trí (LCT)</th>
+                                    <th style="width:34%">Tổng hợp DC</th>
+                                    <th style="width:11%; text-align:center;">Chip</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                                <tr class="total-row">
+                                    <td style="text-align:right">TỔNG CỘNG JOB:</td>
+                                    <td style="text-align:center; font-size:16px;">${grandCarton}</td>
+                                    <td colspan="4">CBM: ${grandCbm.toFixed(3)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="footer-note">
+                            * Ghi chú: Bảng kê này đã gom nhóm số lượng theo SKU để thuận tiện cho việc soạn hàng tại vị trí.<br>
+                            Nhân viên kiểm tra kỹ mã hàng và số lượng trước khi đóng container.
+                        </div>
+                    </div>`;
+            });
+        }
+    </script>
+</body>
+</html>

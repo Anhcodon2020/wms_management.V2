@@ -7,6 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="common.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
@@ -55,6 +56,7 @@
             <li><a href="/inbound">📥 Nhập Kho</a></li>
             <li><a href="/outbound">📤 Xuất Kho</a></li>
             <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+            <li><a href="/tcr">📝 Quản Lý TCR</a></li>
         </ul>
     </div>
 
@@ -134,7 +136,15 @@
             <!-- PHẦN XUẤT PALLET -->
             <div class="pallet-section">
                 <div class="card">
-                    <h3 style="color: #e67e22; margin-top: 0;">➖ Xuất Pallet</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="color: #e67e22; margin: 0;">➖ Xuất Pallet</h3>
+                        <div style="display: flex; gap: 5px; align-items: center; font-size: 12px;">
+                            <input type="date" id="export_start_out" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;" title="Từ ngày">
+                            <span>-</span>
+                            <input type="date" id="export_end_out" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;" title="Đến ngày">
+                            <button class="btn" style="padding: 6px 12px; font-size: 12px; background: #27ae60; color: white;" onclick="exportOutboundPallets()">📤 Export</button>
+                        </div>
+                    </div>
                     <div class="form-inline">
                         <div class="form-group">
                             <label>Ngày</label>
@@ -343,6 +353,46 @@
             if (confirm('Xóa bản ghi xuất này?')) {
                 fetch(`/api/pallets/out/${id}`, { method: 'DELETE' }).then(() => loadAllPallets());
             }
+        }
+
+        function exportOutboundPallets() {
+            const start = document.getElementById('export_start_out').value;
+            const end = document.getElementById('export_end_out').value;
+            
+            if (!start || !end) {
+                return showToast('Vui lòng chọn Từ ngày và Đến ngày để xuất Excel!');
+            }
+
+            fetch('/api/pallets/out')
+            .then(r => r.json())
+            .then(data => {
+                const filteredData = data.filter(item => {
+                    if (!item.trans_date) return false;
+                    const d = item.trans_date.split('T')[0];
+                    return d >= start && d <= end;
+                });
+
+                if (filteredData.length === 0) {
+                    return showToast('Không có dữ liệu xuất pallet trong khoảng thời gian này!');
+                }
+
+                const exportData = filteredData.map(item => ({
+                    "Ngày Xuất": new Date(item.trans_date).toLocaleDateString('vi-VN'),
+                    "Loại Pallet": item.pallet_name || 'Không xác định',
+                    "Số Lượng": item.quantity
+                }));
+
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                const wb = XLSX.utils.book_new();
+                ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 10 }]; // Điều chỉnh độ rộng cột
+
+                XLSX.utils.book_append_sheet(wb, ws, "Xuat Pallet");
+                XLSX.writeFile(wb, `Xuat_Pallet_${start}_den_${end}.xlsx`);
+            })
+            .catch(err => {
+                console.error("Lỗi xuất excel:", err);
+                showToast("Lỗi khi xuất file Excel!");
+            });
         }
 
         // Khởi tạo

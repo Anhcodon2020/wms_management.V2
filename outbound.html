@@ -200,11 +200,18 @@
                 <span style="color:#666">-</span>
                 <input type="date" id="endDate" title="Đến ngày Stuffing" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
                 
+                <select id="noContJobSelect" onchange="filterByNoContJob()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 180px; background: #fffbe6; font-weight: 600;">
+                    <option value="">-- Job chưa có Cont --</option>
+                </select>
+                
                 <input type="text" id="searchInput" placeholder="Tìm Job, RSL, PO, SKU..." onkeyup="searchData()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 200px;">
                 
                 <button onclick="loadData()" style="padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">🔍 Lọc</button>
+                <button onclick="downloadTemplate()" style="padding: 10px 15px; background: #95a5a6; color: white; border: none; border-radius: 5px; cursor: pointer;" title="Tải file mẫu nhập liệu">⬇️ Tải Mẫu</button>
+                <button onclick="openImportModal()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer;">📥 Import</button>
                 <button onclick="exportExcel()" style="padding: 10px 15px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer;">📤 Excel</button>
                 <button onclick="printCLP()" style="padding: 10px 15px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">📋 In CLP</button>
+                <button onclick="printPickingSKU()" style="padding: 10px 15px; background: #9b59b6; color: white; border: none; border-radius: 5px; cursor: pointer;" title="In danh sách soạn hàng gom theo SKU">🖨️ In Picking SKU</button>
                 <button onclick="printPickingList()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer;">🖨️ In Picking List</button>
             </div>
         </div>
@@ -238,6 +245,12 @@
             </div>
         </div>
 
+        <!-- Thong ke Chipboard -->
+        <div class="summary-section" id="chipboardSummarySection" style="display:none; border-top: 4px solid #9b59b6;">
+            <div class="summary-title">📋 Thống Kê Chipboard (Tổng CBM)</div>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap;" id="chipboardList"></div>
+        </div>
+
         <div class="summary-title">📋 Chi Tiết Hàng Hóa</div>
         <div style="overflow-x: auto;">
             <table>
@@ -250,13 +263,15 @@
                         <th>SKU</th>
                         <th>Carton</th>
                         <th>CBM</th>
+                        <th>Kind Pallet</th>
+                        <th>Chipboard</th>
                         <th>Cont / Seal</th>
                         <th>Date Stuffing</th>
                         <th>Hành động</th>
                     </tr>
                 </thead>
                 <tbody id="dataTable">
-                    <tr><td colspan="10" class="empty-row">Đang tải dữ liệu...</td></tr>
+                    <tr><td colspan="12" class="empty-row">Đang tải dữ liệu...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -279,6 +294,27 @@
             
             <button class="btn-submit" id="btnSaveStuffing" onclick="saveStuffingData()">Cập Nhật Thông Tin</button>
             <button class="btn-cancel" onclick="document.getElementById('stuffingModal').style.display='none'">Đóng</button>
+        </div>
+    </div>
+
+    <!-- Modal Import Excel -->
+    <div id="importExcelModal" class="modal">
+        <div class="modal-content" style="width: 450px;">
+            <div class="modal-header">Nhập Dữ Liệu Từ Excel</div>
+            <div class="form-group">
+                <label>Job No (*)</label>
+                <input type="text" id="importJobNo" placeholder="Nhập Job No cho lô hàng này...">
+            </div>
+            <div class="form-group">
+                <label>Ngày Nhận (Date Rcv) (*)</label>
+                <input type="date" id="importDateRcv">
+            </div>
+            <div class="form-group">
+                <label>Chọn file Excel mẫu</label>
+                <input type="file" id="excelFileInput" accept=".xlsx, .xls">
+            </div>
+            <button class="btn-submit" onclick="processImportExcel()" style="background: #8e44ad;">Bắt Đầu Import</button>
+            <button class="btn-cancel" onclick="document.getElementById('importExcelModal').style.display='none'">Đóng</button>
         </div>
     </div>
 
@@ -443,7 +479,7 @@
             tb.innerHTML = '';
             
             if (!currentData || currentData.length === 0) { 
-                tb.innerHTML = '<tr><td colspan="10" class="empty-row">Không tìm thấy dữ liệu</td></tr>'; 
+                tb.innerHTML = '<tr><td colspan="11" class="empty-row">Không tìm thấy dữ liệu</td></tr>'; 
                 return; 
             }
 
@@ -465,18 +501,23 @@
                     <td>${item.sku}</td>
                     <td style="font-weight:bold;">${item.carton}</td>
                     <td>${item.cbm || '-'}</td>
+                    <td style="font-size:11px;">${item.kindpallet || ''} ${item.mapped_kindpallet ? `<br><span class="badge bg-blue" style="font-size:9px;">MD: ${item.mapped_kindpallet}</span>` : ''}</td>
+                    <td><span class="badge bg-gray">${item.chipboard || '-'}</span></td>
                     <td>
                         <div>${item.container || '-'}</div>
                         <div style="font-size:11px; color:#666;">${item.seal || ''}</div>
                     </td>
                     <td>${dStuff}</td>
-                    <td><button class="btn-edit" onclick='openModal(currentData[${index}])'>✏️ Sửa</button></td>
+                    <td>
+                        <button class="btn-edit" onclick='openModal(currentData[${index}])'>✏️ Sửa</button>
+                        <button class="btn-delete-action" style="margin-top: 5px;" onclick='deleteOutboundItem(${item.id}, "${item.jobno}")'>🗑️ Xóa</button>
+                    </td>
                 `;
                 tb.appendChild(tr);
             });
             
             if (tb.innerHTML === '') {
-                tb.innerHTML = '<tr><td colspan="10" class="empty-row">Không có dữ liệu phù hợp với bộ lọc này</td></tr>';
+                tb.innerHTML = '<tr><td colspan="12" class="empty-row">Không có dữ liệu phù hợp với bộ lọc này</td></tr>';
             }
         }
 
@@ -495,13 +536,20 @@
 
         // Render bang tong hop
         function renderSummary() {
+            const tbody = document.getElementById('summaryTableBody');
+            const chipboardSection = document.getElementById('chipboardSummarySection');
+            const chipboardList = document.getElementById('chipboardList');
+
             if (!currentData || currentData.length === 0) {
-                document.getElementById('summaryTableBody').innerHTML = '<tr><td colspan="7" class="empty-row">Không có dữ liệu</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-row">Không có dữ liệu</td></tr>';
+                if (chipboardSection) chipboardSection.style.display = 'none';
                 return;
             }
 
             // Group du lieu theo Job No
             const jobs = {};
+            const chipboards = {};
+
             currentData.forEach(item => {
                 const j = item.jobno;
                 if (!jobs[j]) {
@@ -521,6 +569,17 @@
                 
                 jobs[j].total_carton += parseFloat(item.carton || 0);
                 jobs[j].total_cbm += parseFloat(item.cbm || 0);
+
+                // Tinh chipboard chi cho cac item phu hop voi tab hien tai
+                const hasCont = item.container && item.container.trim() !== '';
+                let valid = true;
+                if (currentSummaryTab === 'hasCont' && !hasCont) valid = false;
+                if (currentSummaryTab === 'noCont' && hasCont) valid = false;
+
+                if (valid && item.chipboard) {
+                    if (!chipboards[item.chipboard]) chipboards[item.chipboard] = 0;
+                    chipboards[item.chipboard] += parseFloat(item.cbm || 0);
+                }
             });
 
             // Chuyen sang mang va Sap xep: Ngay nhap (moi nhat) -> Job No
@@ -529,7 +588,6 @@
                 return a.jobno.localeCompare(b.jobno);
             });
 
-            const tbody = document.getElementById('summaryTableBody');
             tbody.innerHTML = '';
 
             sortedJobs.forEach(job => {
@@ -556,6 +614,16 @@
                         </td>
                     </tr>`;
             });
+
+            if (chipboardList) chipboardList.innerHTML = '';
+            if (Object.keys(chipboards).length > 0 && chipboardSection) {
+                chipboardSection.style.display = 'block';
+                for (const [key, val] of Object.entries(chipboards)) {
+                    chipboardList.innerHTML += `<div style="background: #fdf2e9; padding: 8px 15px; border-radius: 5px; border: 1px solid #fae5d3; font-size: 14px;"><strong>${key}:</strong> ${val.toFixed(3)} m³</div>`;
+                }
+            } else if (chipboardSection) {
+                chipboardSection.style.display = 'none';
+            }
         }
 
         // --- CHỨC NĂNG MỚI: ĐỔI TÊN VÀ XÓA JOB ---
@@ -629,6 +697,28 @@
             
             // Mở trang in trong cửa sổ mới
             const printWindow = window.open('/printpicking.html', '_blank');
+            if (!printWindow) {
+                showToast('Vui lòng cho phép trình duyệt mở cửa sổ bật lên (popup) để xem trang in!', 'error');
+            }
+        }
+
+        function printPickingSKU() {
+            const selectedJobs = Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+            if (selectedJobs.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 Job để in!', 'error');
+                return;
+            }
+
+            const dataToPrint = selectedJobs.map(jobNo => {
+                return {
+                    jobNo: jobNo,
+                    items: currentData.filter(d => d.jobno === jobNo)
+                };
+            });
+
+            localStorage.setItem('printPickingData', JSON.stringify(dataToPrint));
+            
+            const printWindow = window.open('/printpicking_sku.html', '_blank');
             if (!printWindow) {
                 showToast('Vui lòng cho phép trình duyệt mở cửa sổ bật lên (popup) để xem trang in!', 'error');
             }
@@ -805,16 +895,108 @@
             searchTimeout = setTimeout(() => loadData(), 500);
         }
 
-        // Xuat Excel
+        // Hàm tải file mẫu Excel cho Outbound
+        function downloadTemplate() {
+            const headers = [
+                { "ParentPO": "", "ChildPO": "", "Release_key": "", "sku": "", "cbm": 0, "carton": 0 }
+            ];
+            const ws = XLSX.utils.json_to_sheet(headers);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Template_Outbound");
+            XLSX.writeFile(wb, "Outbound_Template.xlsx");
+        }
+
+        // --- LOGIC IMPORT EXCEL ---
+        function openImportModal() {
+            document.getElementById('importExcelModal').style.display = 'flex';
+            document.getElementById('importJobNo').value = '';
+            document.getElementById('importDateRcv').value = new Date().toISOString().split('T')[0];
+            document.getElementById('excelFileInput').value = '';
+        }
+
+        function processImportExcel() {
+            const jobNo = document.getElementById('importJobNo').value.trim();
+            const dateRcv = document.getElementById('importDateRcv').value;
+            const fileInput = document.getElementById('excelFileInput');
+            
+            if (!jobNo || !dateRcv || !fileInput.files[0]) {
+                showToast('Vui lòng nhập đầy đủ Job No, Ngày nhận và chọn file!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    if (jsonData.length === 0) {
+                        showToast('File Excel không có dữ liệu!', 'error');
+                        return;
+                    }
+
+                    // Mapping dữ liệu theo yêu cầu
+                    const mappedData = jsonData.map(row => {
+                        const childPO = String(row['ChildPO'] || '').trim();
+                        return {
+                            jobno: jobNo,
+                            datercv: dateRcv,
+                            rsl: row['Release_key'] || '',
+                            parentpo: row['ParentPO'] || '',
+                            childpo: childPO,
+                            fdc: childPO.substring(0, 3), // Lấy 3 ký tự đầu của ChildPO
+                            sku: row['sku'] || '',
+                            carton: parseInt(row['carton']) || 0,
+                            cbm: parseFloat(row['cbm']) || 0,
+                            kindpallet: row['kindpallet'] || row['Kind Pallet'] || row['KindPallet'] || ''
+                        };
+                    });
+
+                    fetch('/api/outbound/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(mappedData)
+                    })
+                    .then(res => res.json())
+                    .then(result => {
+                        if (result.error) throw new Error(result.error);
+                        showToast(result.message);
+                        document.getElementById('importExcelModal').style.display = 'none';
+                        loadData();
+                    })
+                    .catch(err => showToast('Lỗi Import: ' + err.message, 'error'));
+
+                } catch (error) { showToast('Lỗi đọc file Excel!', 'error'); }
+            };
+            reader.readAsArrayBuffer(fileInput.files[0]);
+        }
+
+        /**
+         * Xuất file Excel cho các Job No đã được chọn (tích checkbox) trong bảng tổng hợp.
+         * Dữ liệu xuất ra sẽ bao gồm chi tiết hàng hóa của các Job đã chọn.
+         */
         function exportExcel() {
-            if (!currentData || currentData.length === 0) {
-                showToast('Không có dữ liệu để xuất!', 'error');
+            // 1. Lấy danh sách Job No từ các checkbox đang được chọn
+            const selectedJobs = Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+            
+            if (selectedJobs.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 Job để xuất Excel!', 'error');
+                return;
+            }
+
+            // 2. Lọc dữ liệu chi tiết (currentData) chỉ lấy những dòng thuộc Job No đã chọn
+            const filteredData = currentData.filter(item => selectedJobs.includes(item.jobno));
+
+            if (filteredData.length === 0) {
+                showToast('Không có dữ liệu chi tiết cho các Job đã chọn!', 'error');
                 return;
             }
 
             // Lấy container theo Job No (ưu tiên Job đầu tiên trong danh sách hiện tại)
-            const firstJob = currentData[0]?.jobno || '';
-            const containerByJob = currentData.find(i => i.jobno === firstJob && i.container)?.container;
+            const firstJob = selectedJobs[0];
+            const containerByJob = filteredData.find(i => i.jobno === firstJob && i.container)?.container;
             const fallbackContainer = currentData.find(i => i.container)?.container || '';
             const containerNo = containerByJob || fallbackContainer || 'NA';
 
@@ -822,7 +1004,7 @@
             const today = new Date();
             const yyyymmdd = today.toISOString().slice(0,10).replace(/-/g,'');
 
-            const exportData = currentData.map(item => ({
+            const exportData = filteredData.map(item => ({
                 "Job No": item.jobno,
                 "RSL": item.rsl,
                 "Parent PO": item.parentpo,
@@ -838,6 +1020,7 @@
                 "Date Stuffing": item.datestuff ? item.datestuff.split('T')[0] : '',
                 "Loose Ctn": item.looscarton,
                 "Kind Pallet": item.kindpallet,
+                "Chipboard": item.chipboard || '',
                 "Remark": item.remark
             }));
 
@@ -847,8 +1030,39 @@
             XLSX.writeFile(wb, `托盘明细_${yyyymmdd}_${containerNo}.xlsx`);
         }
 
+        // Tải danh sách Job chưa có Cont vào Dropdown
+        function loadNoContJobs() {
+            fetch('/api/outbound/dropdown/jobs-no-cont')
+            .then(r => r.json())
+            .then(data => {
+                const sel = document.getElementById('noContJobSelect');
+                sel.innerHTML = '<option value="">-- Job chưa có Cont --</option>';
+                data.forEach(item => {
+                    if (item.jobno) sel.innerHTML += `<option value="${item.jobno}">${item.jobno}</option>`;
+                });
+            }).catch(e => console.error(e));
+        }
+
+        function filterByNoContJob() {
+            const val = document.getElementById('noContJobSelect').value;
+            document.getElementById('searchInput').value = val || '';
+            loadData();
+        }
+
+        function deleteOutboundItem(id, jobno) {
+            if (!confirm(`Bạn có chắc chắn muốn xóa dòng chi tiết này của Job: ${jobno}?`)) return;
+
+            fetch(`/api/outbound/${id}`, { method: 'DELETE' })
+            .then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Đã xóa thành công!');
+                loadData(); // Tải lại bảng sau khi xóa
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
         // Load lan dau
         loadData();
+        loadNoContJobs();
     </script>
 </body>
 </html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Follow - WMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="common.js"></script>
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 14px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #3498db; color: white; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        tr:hover { background-color: #f9f9f9; }
+        .empty-row { text-align: center; color: #888; padding: 20px; font-style: italic; }
+
+        /* Modal & Form */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 999; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group.full { grid-column: span 2; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-size: 13px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        
+        .btn-submit { width: 100%; padding: 12px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        .btn-submit:hover { background: #2980b9; }
+        .btn-cancel { width: 100%; padding: 10px; background: transparent; color: #7f8c8d; border: none; margin-top: 5px; cursor: pointer; }
+        
+        /* Nút thao tác */
+        .btn-edit { padding: 5px 10px; background: #f39c12; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .btn-delete { padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; margin-left: 5px; }
+
+        /* Toast */
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 16px; opacity: 0; transition: opacity 0.5s, bottom 0.5s; }
+        .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        .toast.success { background-color: #2ecc71; }
+        .toast.error { background-color: #e74c3c; }
+
+        /* Status Badges */
+        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; color: white; }
+        .status-pending { background-color: #f39c12; }
+        .status-completed { background-color: #2ecc71; }
+
+        /* Style cho Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .tab-btn { padding: 8px 20px; border: none; background: #f1f1f1; cursor: pointer; border-radius: 4px; font-weight: 600; color: #666; transition: 0.3s; }
+        .tab-btn.active { background: #3498db; color: white; }
+        .tab-btn:hover:not(.active) { background: #ddd; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
+            <li><a href="/scanfile">📑 Scan File Import</a></li>
+            <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+            <li><a href="/tcr">📝 Quản Lý TCR</a></li>
+            <li><a href="/follow">🔄 Quản Lý Follow</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2>Quản Lý Follow (Chuyển đổi Parent PO)</h2>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="text" id="searchInput" placeholder="Tìm SKU, PO, NCC..." onkeyup="searchData()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 250px;">
+                <button onclick="loadData()" style="padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">🔍 Lọc</button>
+                <button onclick="openModal()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; cursor: pointer;">+ Thêm Mới</button>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('0', event)">Chưa xử lý</button>
+            <button class="tab-btn" onclick="switchTab('1', event)">Đã xử lý</button>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>SKU</th>
+                        <th>Nhà Cung Cấp</th>
+                        <th>Old Parent PO</th>
+                        <th>New Parent PO</th>
+                        <th>Carton</th>
+                        <th style="text-align: center;">Inbound</th>
+                        <th>Trạng Thái</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTable">
+                    <tr><td colspan="9" class="empty-row">Đang tải dữ liệu...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Form -->
+    <div id="dataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" id="modalTitle">Thông Tin Follow</div>
+            <input type="hidden" id="dataId">
+            
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>SKU (*)</label>
+                    <input type="text" id="sku" placeholder="Nhập mã SKU" onchange="autoFillSupplier()">
+                </div>
+                <div class="form-group">
+                    <label>Nhà Cung Cấp</label>
+                    <input type="text" id="supplier" placeholder="Tên nhà cung cấp">
+                </div>
+                <div class="form-group">
+                    <label>Old Parent PO (*)</label>
+                    <input type="text" id="old_parentPO" placeholder="Parent PO cũ">
+                </div>
+                <div class="form-group">
+                    <label>New Parent PO (*)</label>
+                    <input type="text" id="new_parentPO" placeholder="Parent PO mới">
+                </div>
+                <div class="form-group">
+                    <label>Carton</label>
+                    <input type="number" id="carton" placeholder="Số lượng carton" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Trạng Thái</label>
+                    <select id="status">
+                        <option value="0">Chưa xử lý (0)</option>
+                        <option value="1">Đã xử lý (1)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button class="btn-submit" onclick="saveData()">Lưu Dữ Liệu</button>
+            <button class="btn-cancel" onclick="closeModal()">Đóng</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"><span id="toast-msg">Thông báo</span></div>
+
+    <script>
+        let searchTimeout;
+        let currentData = [];
+        let currentTab = '0'; // 0: Chưa xử lý, 1: Đã xử lý
+
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            t.innerHTML = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = t.className.replace('show', ''), 3000);
+        }
+
+        function openModal(editData = null) {
+            document.getElementById('dataModal').style.display = 'flex';
+            
+            if (editData) {
+                document.getElementById('modalTitle').innerText = 'Chỉnh Sửa Follow';
+                document.getElementById('dataId').value = editData.id;
+                document.getElementById('sku').value = editData.sku;
+                document.getElementById('supplier').value = editData.supplier || '';
+                document.getElementById('old_parentPO').value = editData.old_parentPO;
+                document.getElementById('new_parentPO').value = editData.new_parentPO;
+                document.getElementById('carton').value = editData.carton || 0;
+                document.getElementById('status').value = editData.status || 0;
+            } else {
+                document.getElementById('modalTitle').innerText = 'Thêm Mới Follow';
+                document.getElementById('dataId').value = '';
+                document.getElementById('sku').value = '';
+                document.getElementById('supplier').value = '';
+                document.getElementById('old_parentPO').value = '';
+                document.getElementById('new_parentPO').value = '';
+                document.getElementById('carton').value = 0;
+                document.getElementById('status').value = 0;
+            }
+        }
+
+        function closeModal() { document.getElementById('dataModal').style.display = 'none'; }
+
+        function switchTab(tab, event) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            renderTable();
+        }
+
+        function loadData() {
+            const q = document.getElementById('searchInput').value;
+            let url = '/api/follow';
+            if (q) url += `?q=${encodeURIComponent(q)}`;
+            
+            fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                currentData = data;
+                renderTable();
+            }).catch(e => showToast('Lỗi tải dữ liệu: ' + e.message, 'error'));
+        }
+
+        function renderTable() {
+            const tb = document.getElementById('dataTable');
+            tb.innerHTML = '';
+            
+            const filteredData = currentData.filter(item => String(item.status || 0) === currentTab);
+            
+            if (filteredData.length === 0) { 
+                tb.innerHTML = '<tr><td colspan="9" class="empty-row">Không có dữ liệu trong mục này</td></tr>';
+                return;
+            }
+
+            filteredData.forEach((item) => {
+                const originalIndex = currentData.findIndex(d => d.id === item.id);
+                
+                const statusBadge = item.status == 1 
+                    ? '<span class="status-badge status-completed">Đã xử lý</span>' 
+                    : '<span class="status-badge status-pending">Chưa xử lý</span>';
+
+                const inboundBadge = item.in_inbound === 'Y' 
+                    ? '<span style="color:#2ecc71; font-weight:bold;">Y</span>' 
+                    : '<span style="color:#95a5a6; font-weight:bold;">N</span>';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><b>${item.id}</b></td>
+                    <td>${item.sku || '-'}</td>
+                    <td>${item.supplier || '-'}</td>
+                    <td style="color:#e74c3c; font-weight:bold;">${item.old_parentPO || '-'}</td>
+                    <td style="color:#2ecc71; font-weight:bold;">${item.new_parentPO || '-'}</td>
+                    <td>${item.carton || 0}</td>
+                    <td style="text-align: center;">${inboundBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn-edit" onclick='openModal(currentData[${originalIndex}])'>✏️ Sửa</button>
+                        <button class="btn-delete" onclick="deleteData(${item.id})">🗑️ Xóa</button>
+                    </td>
+                `;
+                tb.appendChild(tr);
+            });
+        }
+
+        function saveData() {
+            const id = document.getElementById('dataId').value;
+            const data = {
+                id: id || null,
+                sku: document.getElementById('sku').value,
+                supplier: document.getElementById('supplier').value,
+                old_parentPO: document.getElementById('old_parentPO').value,
+                new_parentPO: document.getElementById('new_parentPO').value,
+                carton: document.getElementById('carton').value,
+                status: document.getElementById('status').value
+            };
+
+            if (!data.sku || !data.old_parentPO || !data.new_parentPO) {
+                showToast('Vui lòng nhập SKU, Old Parent PO và New Parent PO', 'error');
+                return;
+            }
+
+            const method = id ? 'PUT' : 'POST';
+
+            fetch('/api/follow', {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Lưu thành công!');
+                closeModal();
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function deleteData(id) {
+            if (!confirm('Bạn có chắc chắn muốn xóa bản ghi này?')) return;
+
+            fetch(`/api/follow/${id}`, {
+                method: 'DELETE'
+            }).then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast('Đã xóa thành công!');
+                loadData();
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function searchData() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadData(), 500);
+        }
+
+        // Tự động tải tên nhà cung cấp dựa trên SKU từ Master Data
+        function autoFillSupplier() {
+            const skuVal = document.getElementById('sku').value.trim();
+            if (!skuVal) return;
+            
+            fetch(`/api/masterdata?q=${encodeURIComponent(skuVal)}`)
+            .then(r => r.json())
+            .then(data => {
+                const matchedItem = data.find(item => item.sku.toLowerCase() === skuVal.toLowerCase());
+                if (matchedItem) {
+                    document.getElementById('supplier').value = matchedItem.name_doc || matchedItem.MANCC || '';
+                }
+            }).catch(e => console.error('Lỗi tự động tải NCC:', e));
+        }
+
+        // Tải dữ liệu ngay khi mở trang
+        loadData();
+    </script>
+</body>
+</html>

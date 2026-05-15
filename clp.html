@@ -258,6 +258,25 @@
                 alignment: { horizontal: "right" }
             };
 
+            const dataStyle = {
+                border: {
+                    top: { style: "thin" }, bottom: { style: "thin" },
+                    left: { style: "thin" }, right: { style: "thin" }
+                },
+                font: { sz: 10 },
+                alignment: { vertical: "center", horizontal: "center" }
+            };
+
+            const dataStyleAlt = {
+                fill: { fgColor: { rgb: "F5F5F5" } }, // Màu xám nhạt xen kẽ
+                border: {
+                    top: { style: "thin" }, bottom: { style: "thin" },
+                    left: { style: "thin" }, right: { style: "thin" }
+                },
+                font: { sz: 10 },
+                alignment: { vertical: "center", horizontal: "center" }
+            };
+
             // Sắp xếp: jobno_shp -> systempallet -> weight (giảm dần) -> palletnumber
             const sortedData = [...currentListData].sort((a, b) => {
                 const jA = a.jobno_shp || a.jobno || '';
@@ -336,7 +355,25 @@
                     if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
                     sheet[addr].s = subtotalStyle;
                 });
+                currentRow++;
             }
+
+            // Kẻ bảng thêm cho đủ 300+ dòng (ở đây mở rộng đến 350 dòng) để có sẵn form
+            const maxRowsToFormat = Math.max(currentRow, 350);
+            for (let r = 11; r <= maxRowsToFormat; r++) {
+                // Xác định style cho dòng hiện tại (dòng chẵn dùng dataStyleAlt, dòng lẻ dùng dataStyle)
+                const currentStyle = (r % 2 === 0) ? dataStyleAlt : dataStyle;
+                
+                ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(col => {
+                    const addr = col + r;
+                    if (!sheet[addr]) sheet[addr] = { t: 's', v: '' };
+                    // Chỉ áp dụng style nếu ô chưa có style (để không đè lên subtotalStyle)
+                    if (!sheet[addr].s) sheet[addr].s = currentStyle;
+                });
+            }
+
+            // Cập nhật lại vùng dữ liệu để Excel nhận diện được giới hạn dòng mới
+            sheet['!ref'] = `A1:O${maxRowsToFormat}`;
 
             const now = new Date();
             const yyyymmdd = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;

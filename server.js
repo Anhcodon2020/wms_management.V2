@@ -121,6 +121,49 @@ connection.connect((err) => {
         });
       }
     });
+
+    // Tự động tạo bảng TCR nếu chưa có
+    const createTCRTable = `
+      CREATE TABLE IF NOT EXISTS TCR (
+        id INT NOT NULL AUTO_INCREMENT,
+        parentpo VARCHAR(50) DEFAULT NULL,
+        sku VARCHAR(30) DEFAULT NULL,
+        idsupplier VARCHAR(50) DEFAULT NULL,
+        datercv DATE DEFAULT NULL,
+        datesolve DATE DEFAULT NULL,
+        carton INT DEFAULT NULL,
+        remark VARCHAR(100) DEFAULT NULL,
+        status VARCHAR(50) DEFAULT NULL,
+        PRIMARY KEY (id)
+      )`;
+    connection.query(createTCRTable, (err) => {
+      if (err) console.error("❌ [LOI] Không thể khởi tạo bảng TCR:", err.message);
+      else console.log("✅ [THANH CONG] Đảm bảo bảng TCR đã tồn tại!");
+    });
+
+    // Tự động tạo bảng follow nếu chưa có
+    const createFollowTable = `
+      CREATE TABLE IF NOT EXISTS follow (
+        id INT NOT NULL AUTO_INCREMENT,
+        sku VARCHAR(20) DEFAULT NULL,
+        old_parentPO VARCHAR(50) DEFAULT NULL,
+        new_parentPO VARCHAR(50) DEFAULT NULL,
+        carton INT DEFAULT NULL,
+        status TINYINT(1) DEFAULT '0',
+        PRIMARY KEY (id)
+      )`;
+    connection.query(createFollowTable, (err) => {
+      if (err) console.error("❌ [LOI] Không thể khởi tạo bảng follow:", err.message);
+      else {
+        console.log("✅ [THANH CONG] Đảm bảo bảng follow đã tồn tại!");
+        // Tự động kiểm tra và thêm cột supplier vào bảng follow
+        connection.query("SHOW COLUMNS FROM follow LIKE 'supplier'", (err, results) => {
+          if (!err && results.length === 0) {
+            connection.query("ALTER TABLE follow ADD COLUMN supplier VARCHAR(255) DEFAULT NULL");
+          }
+        });
+      }
+    });
   }
 });
 
@@ -284,11 +327,44 @@ app.get(['/printpicking', '/printpicking.html'], (req, res) => {
   });
 });
 
+// --- ROUTE MOI: Trang In Picking List SKU ---
+app.get(['/printpicking_sku', '/printpicking_sku.html'], (req, res) => {
+  fs.readFile(__dirname + '/printpicking_sku.html', 'utf8', (err, data) => {
+    if (err) {
+      res.send('<h1>Lỗi 404: Không tìm thấy file printpicking_sku.html</h1>');
+      return;
+    }
+    res.send(data);
+  });
+});
+
 // --- ROUTE MOI: Trang In Tally Sheet ---
 app.get(['/printTally', '/printTally.html'], (req, res) => {
   fs.readFile(__dirname + '/printTally.html', 'utf8', (err, data) => {
     if (err) {
       res.send('<h1>Lỗi 404: Không tìm thấy file printTally.html</h1>');
+      return;
+    }
+    res.send(data);
+  });
+});
+
+// --- ROUTE MOI: Trang Quan Ly TCR ---
+app.get(['/tcr', '/tcr.html'], (req, res) => {
+  fs.readFile(__dirname + '/tcr.html', 'utf8', (err, data) => {
+    if (err) {
+      res.send('<h1>Lỗi 404: Không tìm thấy file tcr.html</h1>');
+      return;
+    }
+    res.send(data);
+  });
+});
+
+// --- ROUTE MOI: Trang Quản Lý Follow ---
+app.get(['/follow', '/follow.html'], (req, res) => {
+  fs.readFile(__dirname + '/follow.html', 'utf8', (err, data) => {
+    if (err) {
+      res.send('<h1>Lỗi 404: Không tìm thấy file follow.html</h1>');
       return;
     }
     res.send(data);
@@ -390,7 +466,7 @@ app.put('/api/masterdata', (req, res) => {
 // 1. Lay danh sach BBR
 app.get('/api/bbr', (req, res) => {
     const { q, start, end, parentpo } = req.query;
-    let sql = 'SELECT b.*, m.kindpallet AS mapped_kindpallet, m.chipboard AS mapped_chipboard, n.name_doc, d.hubdc FROM bbrreport b LEFT JOIN masterdata m ON b.item = m.sku LEFT JOIN nhacungcap n ON b.supplier = n.MANCC LEFT JOIN DC d ON b.hub_DC = d.id';
+    let sql = 'SELECT b.*, m.cbm AS mapped_cbm, m.kindpallet AS mapped_kindpallet, m.chipboard AS mapped_chipboard, n.name_doc, d.hubdc FROM bbrreport b LEFT JOIN masterdata m ON b.item = m.sku LEFT JOIN nhacungcap n ON b.supplier = n.MANCC LEFT JOIN DC d ON b.hub_DC = d.id';
     let params = [];
     let conditions = [];
 
@@ -625,6 +701,17 @@ app.delete('/api/bbr/parent/:parentpo', (req, res) => {
     });
 });
 
+// 6. Xóa 1 dòng BBR theo ID
+app.delete('/api/bbr/:id', (req, res) => {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Thiếu ID' });
+    const sql = 'DELETE FROM bbrreport WHERE id = ?';
+    connection.query(sql, [id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `Đã xóa thành công dòng dữ liệu!` });
+    });
+});
+
 // --- API: Ho tro Dropdown cho Inbound (Lay tu BBR) ---
 
 // 1. Lay danh sach Parent PO (Distinct)
@@ -762,17 +849,35 @@ app.delete('/api/inbound/by-packinglist/:plNo', (req, res) => {
     });
 });
 
+// --- API: Hỗ trợ Dropdown cho TCR (Lấy từ Inbound) ---
+app.get('/api/inbound/dropdown/po', (req, res) => {
+    const sql = "SELECT DISTINCT po FROM inbound WHERE po IS NOT NULL AND TRIM(po) <> '' ORDER BY po ASC";
+    connection.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.get('/api/inbound/dropdown/items', (req, res) => {
+    const { po } = req.query;
+    const sql = "SELECT i.sku, MAX(i.MANCC) as MANCC, MAX(n.TENNCC) as TENNCC, MAX(n.name_doc) as name_doc FROM inbound i LEFT JOIN nhacungcap n ON i.MANCC = n.MANCC WHERE i.po = ? GROUP BY i.sku";
+    connection.query(sql, [po], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
 // --- API: Quan ly Xuat Kho (Outbound) ---
 
 // 1. Lay danh sach Outbound
 app.get('/api/outbound', (req, res) => {
     const { q, start, end, noCont } = req.query;
-    let sql = 'SELECT o.*, m.chipboard, m.cartonperpallet FROM outbound o LEFT JOIN masterdata m ON o.sku = m.sku';
+    let sql = 'SELECT o.*, m.chipboard, m.cartonperpallet, m.kindpallet AS mapped_kindpallet FROM outbound o LEFT JOIN masterdata m ON o.sku = m.sku';
     let params = [];
     let conditions = [];
 
     if (q) {
-        conditions.push('(jobno LIKE ? OR rsl LIKE ? OR childpo LIKE ? OR sku LIKE ?)');
+        conditions.push('(o.jobno LIKE ? OR o.rsl LIKE ? OR o.childpo LIKE ? OR o.sku LIKE ?)');
         const k = `%${q}%`;
         params.push(k, k, k, k);
     }
@@ -788,7 +893,11 @@ app.get('/api/outbound', (req, res) => {
     sql += ' ORDER BY o.datestuff DESC, o.id DESC';
 
     connection.query(sql, params, (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error('❌ [API ERROR] GET /api/outbound:', err.message);
+            console.error('▶️ Câu lệnh SQL bị lỗi:', sql);
+            return res.status(500).json({ error: err.message });
+        }
         res.json(results);
     });
 });
@@ -830,6 +939,37 @@ app.put('/api/outbound', (req, res) => {
     });
 });
 
+// 5. Import Outbound tu Excel
+app.post('/api/outbound/import', async (req, res) => {
+    const data = req.body;
+    if (!Array.isArray(data) || data.length === 0) return res.status(400).json({ error: "Dữ liệu không hợp lệ" });
+
+    try {
+        // SQL Bulk Insert
+        const sql = `INSERT INTO outbound (
+            jobno, rsl, parentpo, childpo, fdc, sku, carton, cbm, datercv
+        ) VALUES ?`;
+
+        const values = data.map(d => [
+            d.jobno, 
+            d.rsl, 
+            d.parentpo, 
+            d.childpo, 
+            d.fdc, 
+            d.sku, 
+            d.carton, 
+            d.cbm, 
+            d.datercv
+        ]);
+
+        const [result] = await connection.promise().query(sql, [values]);
+        res.json({ message: `Đã import thành công ${result.affectedRows} dòng vào Outbound.` });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Lỗi Database: ' + err.message });
+    }
+});
+
 // 4. Cap nhat Stuffing cho toan bo Job No (Bulk Update)
 app.put('/api/outbound/stuffing', (req, res) => {
     const { jobno, container, seal, datestuff } = req.body;
@@ -841,6 +981,17 @@ app.put('/api/outbound/stuffing', (req, res) => {
     connection.query(sql, [container, seal, stuffingDate, jobno], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: `Đã cập nhật thông tin đóng hàng cho Job ${jobno} (${result.affectedRows} dòng).` });
+    });
+});
+
+// 7. Xóa 1 dòng Outbound (chi tiết) theo ID
+app.delete('/api/outbound/:id', (req, res) => {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Thiếu ID' });
+    const sql = 'DELETE FROM outbound WHERE id = ?';
+    connection.query(sql, [id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `Đã xóa thành công dòng chi tiết!` });
     });
 });
 
@@ -1055,6 +1206,7 @@ app.get('/api/transactions/sku/:sku', (req, res) => {
 // 1. Lay danh sach data scan (Limit 500 dong moi nhat)
 app.get('/api/scanfile', (req, res) => {
     const { q, jobno, noCont, pallet_type } = req.query;
+    const { exactJobno } = req.query; // Thêm tham số mới để tìm kiếm chính xác Job No
     // Join voi outbound de kiem tra trang thai container cua Job
     let sql = `
         SELECT s.* 
@@ -1072,6 +1224,7 @@ app.get('/api/scanfile', (req, res) => {
     if (jobno) { conditions.push('s.jobno = ?'); params.push(jobno); }
     if (noCont === 'true') { conditions.push("(o.container IS NULL OR TRIM(o.container) = '')"); }
     if (pallet_type) { conditions.push('s.pallet_type = ?'); params.push(pallet_type); }
+    if (exactJobno) { conditions.push('s.jobno = ?'); params.push(exactJobno); } // Điều kiện tìm kiếm chính xác Job No
 
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
 
@@ -1211,6 +1364,49 @@ app.get('/api/scanfile/comparison', (req, res) => {
     });
 });
 
+// --- API: Đối soát TỔNG SỐ SKU giữa Outbound và Scanfile ---
+app.get('/api/scanfile/sku-comparison', (req, res) => {
+    const sql = `
+        SELECT 
+            COALESCE(ob.jobno, sf.jobno) as jobno,
+            IFNULL(ob.total_skus, 0) as planned_skus,
+            IFNULL(sf.total_skus, 0) as scanned_skus
+        FROM (
+            SELECT jobno, COUNT(DISTINCT sku) as total_skus
+            FROM outbound
+            WHERE container IS NULL OR TRIM(container) = ''
+            GROUP BY jobno
+        ) ob
+        LEFT JOIN (
+            SELECT jobno, COUNT(DISTINCT sku) as total_skus
+            FROM scanfile
+            GROUP BY jobno
+        ) sf ON ob.jobno = sf.jobno
+        UNION
+        SELECT 
+            COALESCE(ob.jobno, sf.jobno) as jobno,
+            IFNULL(ob.total_skus, 0) as planned_skus,
+            IFNULL(sf.total_skus, 0) as scanned_skus
+        FROM (
+            SELECT jobno, COUNT(DISTINCT sku) as total_skus
+            FROM outbound
+            WHERE container IS NULL OR TRIM(container) = ''
+            GROUP BY jobno
+        ) ob
+        RIGHT JOIN (
+            SELECT jobno, COUNT(DISTINCT sku) as total_skus
+            FROM scanfile
+            GROUP BY jobno
+        ) sf ON ob.jobno = sf.jobno
+        WHERE ob.jobno IS NULL
+        ORDER BY jobno DESC`;
+
+    connection.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
 // --- API: Liệt kê danh sách file trong thư mục uploads ---
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir); // Tự động tạo thư mục nếu chưa có
@@ -1243,7 +1439,8 @@ app.get('/api/dashboard/stats', (req, res) => {
             (SELECT IFNULL(SUM(qty), 0) FROM bbrreport WHERE YEARWEEK(deliverydate, 1) = YEARWEEK(CURDATE(), 1)) as forecast_this_week,
             (SELECT IFNULL(SUM(b.qty * m.cbm), 0) FROM bbrreport b JOIN masterdata m ON b.item = m.sku WHERE YEARWEEK(b.deliverydate, 1) = YEARWEEK(CURDATE(), 1)) as forecast_this_week_cbm,
             (SELECT IFNULL(SUM(qty), 0) FROM bbrreport WHERE YEARWEEK(deliverydate, 1) = YEARWEEK(DATE_ADD(CURDATE(), INTERVAL 1 WEEK), 1)) as forecast_next_week,
-            (SELECT IFNULL(SUM(b.qty * m.cbm), 0) FROM bbrreport b JOIN masterdata m ON b.item = m.sku WHERE YEARWEEK(b.deliverydate, 1) = YEARWEEK(DATE_ADD(CURDATE(), INTERVAL 1 WEEK), 1)) as forecast_next_week_cbm
+            (SELECT IFNULL(SUM(b.qty * m.cbm), 0) FROM bbrreport b JOIN masterdata m ON b.item = m.sku WHERE YEARWEEK(b.deliverydate, 1) = YEARWEEK(DATE_ADD(CURDATE(), INTERVAL 1 WEEK), 1)) as forecast_next_week_cbm,
+            (SELECT IFNULL(SUM(cbm), 0) FROM outbound WHERE container IS NULL OR TRIM(container) = '') as outbound_no_cont_cbm
     `;
     connection.query(sql, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -1408,6 +1605,116 @@ app.post('/api/pallets/out', (req, res) => {
 // 3. Xóa bản ghi xuất pallet
 app.delete('/api/pallets/out/:id', (req, res) => {
     connection.query('DELETE FROM pallet_out WHERE id = ?', [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Đã xóa thành công!' });
+    });
+});
+
+// --- API: Quản lý TCR (Trouble Case Report) ---
+
+// 1. Lấy danh sách TCR
+app.get('/api/tcr', (req, res) => {
+    const { q } = req.query;
+    let sql = 'SELECT t.*, n.TENNCC, n.name_doc FROM TCR t LEFT JOIN nhacungcap n ON t.idsupplier = n.MANCC';
+    let params = [];
+    
+    if (q) {
+        sql += ' WHERE t.parentpo LIKE ? OR t.sku LIKE ? OR t.idsupplier LIKE ? OR n.TENNCC LIKE ? OR n.name_doc LIKE ?';
+        const k = `%${q}%`;
+        params.push(k, k, k, k, k);
+    }
+    sql += ' ORDER BY t.id DESC';
+    
+    connection.query(sql, params, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 2. Thêm mới bản ghi TCR
+app.post('/api/tcr', (req, res) => {
+    const d = req.body;
+    if (!d.parentpo || !d.sku) return res.status(400).json({ error: 'Thiếu Parent PO hoặc SKU' });
+    const sql = `INSERT INTO TCR (parentpo, sku, idsupplier, datercv, datesolve, carton, remark, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    const v = [d.parentpo, d.sku, d.idsupplier, d.datercv, d.datesolve, d.carton, d.remark, d.status];
+    connection.query(sql, v, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Thêm mới thành công!', id: result.insertId });
+    });
+});
+
+// 3. Cập nhật bản ghi TCR
+app.put('/api/tcr', (req, res) => {
+    const d = req.body;
+    if (!d.id) return res.status(400).json({ error: 'Thiếu ID' });
+    const sql = `UPDATE TCR SET parentpo=?, sku=?, idsupplier=?, datercv=?, datesolve=?, carton=?, remark=?, status=? WHERE id=?`;
+    const v = [d.parentpo, d.sku, d.idsupplier, d.datercv, d.datesolve, d.carton, d.remark, d.status, d.id];
+    connection.query(sql, v, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Cập nhật thành công!' });
+    });
+});
+
+// 4. Xóa bản ghi TCR
+app.delete('/api/tcr/:id', (req, res) => {
+    connection.query('DELETE FROM TCR WHERE id = ?', [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Đã xóa thành công!' });
+    });
+});
+
+// --- API: Quản lý Follow ---
+
+// 1. Lấy danh sách Follow
+app.get('/api/follow', (req, res) => {
+    const { q } = req.query;
+    let sql = `
+        SELECT f.*, 
+               CASE WHEN EXISTS (SELECT 1 FROM inbound i WHERE i.po = f.new_parentPO LIMIT 1) THEN 'Y' ELSE 'N' END AS in_inbound
+        FROM follow f
+    `;
+    let params = [];
+    
+    if (q) {
+        sql += ' WHERE f.sku LIKE ? OR f.old_parentPO LIKE ? OR f.new_parentPO LIKE ? OR f.supplier LIKE ?';
+        const k = `%${q}%`;
+        params.push(k, k, k, k);
+    }
+    sql += ' ORDER BY f.id DESC';
+    
+    connection.query(sql, params, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// 2. Thêm mới bản ghi Follow
+app.post('/api/follow', (req, res) => {
+    const d = req.body;
+    if (!d.sku || !d.old_parentPO || !d.new_parentPO) return res.status(400).json({ error: 'Thiếu thông tin bắt buộc (SKU, Old PO, New PO)' });
+    const sql = `INSERT INTO follow (sku, old_parentPO, new_parentPO, carton, status, supplier) VALUES (?, ?, ?, ?, ?, ?)`;
+    const v = [d.sku, d.old_parentPO, d.new_parentPO, d.carton || 0, d.status || 0, d.supplier || null];
+    connection.query(sql, v, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Thêm mới thành công!', id: result.insertId });
+    });
+});
+
+// 3. Cập nhật bản ghi Follow
+app.put('/api/follow', (req, res) => {
+    const d = req.body;
+    if (!d.id) return res.status(400).json({ error: 'Thiếu ID' });
+    const sql = `UPDATE follow SET sku=?, old_parentPO=?, new_parentPO=?, carton=?, status=?, supplier=? WHERE id=?`;
+    const v = [d.sku, d.old_parentPO, d.new_parentPO, d.carton || 0, d.status || 0, d.supplier || null, d.id];
+    connection.query(sql, v, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Cập nhật thành công!' });
+    });
+});
+
+// 4. Xóa bản ghi Follow
+app.delete('/api/follow/:id', (req, res) => {
+    connection.query('DELETE FROM follow WHERE id = ?', [req.params.id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: 'Đã xóa thành công!' });
     });

@@ -74,14 +74,15 @@
                     <option value="">-- Chọn Loại Pallet --</option>
                 </select>
                 <input type="text" id="searchInput" placeholder="Tìm Job No, SSCC..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:250px;" onkeyup="searchData()">
+                <input type="text" id="jobnoExactSearchInput" placeholder="Tìm chính xác Job No..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:180px; margin-left:5px;" onkeyup="searchData()">
                 <label style="font-size: 13px; margin-left: 10px; cursor: pointer;">
                     <input type="checkbox" id="filterNoCont" onchange="loadAllData()"> Chỉ hiện Job chưa có Cont
                 </label>
                 
                 <input type="text" id="deleteJobInput" placeholder="Nhập Job No để xóa..." style="padding:10px; border:1px solid #ddd; border-radius:5px; width:150px; margin-left:10px;">
                 <button class="btn btn-delete-job" onclick="deleteScanJob()">🗑️ Xóa Job Scan</button>
-                <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📥 Import Nhiều File Excel</button>
-                <input type="file" id="fileInput" multiple hidden accept=".xlsx, .xls" onchange="processImport()">
+                <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📥 Import CSV/Excel</button>
+                <input type="file" id="fileInput" multiple hidden accept=".xlsx, .xls, .csv" onchange="processImport()">
             </div>
         </div>
 
@@ -90,27 +91,27 @@
             <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
         </div>
 
-        <div class="section-title">📊 Bảng Đối Soát SKU (Outbound vs Scanned)</div>
+        <div class="section-title">📊 Đối Soát Chi Tiết SKU (Outbound vs Scanned)</div>
         <div style="overflow-x: auto; margin-bottom: 30px;">
             <table>
                 <thead>
                     <tr>
                         <th>Job No</th>
                         <th>SKU</th>
-                        <th>Kế Hoạch (Outbound)</th>
-                        <th>Đã Quét (Scanfile)</th>
+                        <th>Tag Label</th>
+                        <th>Kế Hoạch (Ctn)</th>
+                        <th>Đã Quét (Ctn)</th>
                         <th>Chênh Lệch</th>
-                        <th>Chưa Quét</th>
                         <th>Kết Quả</th>
                     </tr>
                 </thead>
                 <tbody id="comparisonTableBody">
-                    <tr><td colspan="6" style="text-align:center;">Đang tải dữ liệu đối soát...</td></tr>
+                    <tr><td colspan="7" style="text-align:center;">Đang tải dữ liệu đối soát...</td></tr>
                 </tbody>
             </table>
         </div>
 
-        <div class="section-title">📋 Chi Tiết Scan Data</div>
+        <div class="section-title">📋 Chi Tiết Dữ Liệu Scan</div>
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -132,6 +133,7 @@
                 </tbody>
             </table>
         </div>
+        </div>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -144,7 +146,13 @@
             .then(r => r.json())
             .then(data => {
                 skuRemarkMap = {};
-                data.forEach(item => { if (item.sku) skuRemarkMap[item.sku] = item.remark; });
+                data.forEach(item => { 
+                    if (item.sku) {
+                        // Trim dữ liệu để tránh sai lệch do khoảng trắng trong database
+                        const remarkVal = item.remark ? String(item.remark).trim() : '';
+                        skuRemarkMap[String(item.sku).trim()] = remarkVal;
+                    }
+                });
             })
             .catch(err => console.error('Lỗi tải Master Data Map:', err));
         }
@@ -235,34 +243,44 @@
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
-                    // Sử dụng header: 1 để lấy dữ liệu dạng mảng (truy cập theo index A=0, B=1, C=2...)
-                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    // Đọc dữ liệu: dòng 1 là tiêu đề, dữ liệu bắt đầu từ dòng 2
+                    const rows = XLSX.utils.sheet_to_json(worksheet);
                     
+                    // Hàm phụ để lấy giá trị theo tên cột, xử lý format đặc biệt như =" release_key "
+                    const getVal = (row, target) => {
+                        const clean = (s) => s.replace(/[=" ]/g, '').toLowerCase();
+                        const targetClean = clean(target);
+                        const foundKey = Object.keys(row).find(k => clean(k) === targetClean);
+                        if (foundKey === undefined) return '';
+                        const val = row[foundKey];
+                        // Làm sạch cả giá trị (value) nếu nó chứa format =" value " để lấy phần text bên trong
+                        return (val === null || val === undefined) ? '' : String(val).replace(/[="]/g, '').trim();
+                    };
+
                     // Lay Job No da chon tu dropdown
                     const selectedJobNo = document.getElementById('outboundJobSelect').value;
                     const selectedPalletType = document.getElementById('palletTypeSelect').value;
 
-                    // Mapping dữ liệu theo chỉ số cột (B=1, C=2, D=3, F=5, H=7...)
-                    // Đọc từ dòng đầu tiên vì file không có tiêu đề
+                    // Mapping dữ liệu theo yêu cầu mới (hỗ trợ file .csv)
                     const mappedData = rows.map(row => {
-                        const sku = row[14] ? String(row[14]).trim() : '';
-                        const masterDelivery = row[3] ? String(row[3]).trim() : '';
+                        const sku = getVal(row, 'sku');
+                        const masterDelivery = getVal(row, 'master_delivery');
                         const today = new Date().toISOString().split('T')[0]; // Lấy ngày hiện tại YYYY-MM-DD
 
                         return {
-                            release_key: row[1] || '',
-                            sscc: row[2] || '',
+                            release_key: getVal(row, 'release_key'),
+                            sscc: getVal(row, 'sscc'),
                             master_delivery: masterDelivery,
-                            qty: 1, // Luôn mặc định là 1 theo yêu cầu
-                            master_ctl: row[5] || '',
-                            master_st_company: '',
-                            master_add1: row[7] || '',
-                            master_add2: row[8] || '',
-                            master_add3: row[9] || '',
-                            master_add4: row[10] || '',
-                            ship_to: row[11] || '',
-                            st_zip: row[12] || '',
-                            barcode: row[13] || '',
+                            qty: parseInt(getVal(row, 'qty')) || 0,
+                            master_ctl: getVal(row, 'master_ctl'),
+                            master_st_company: getVal(row, 'master_st_company'),
+                            master_add1: getVal(row, 'master_add1'),
+                            master_add2: getVal(row, 'master_add2'),
+                            master_add3: getVal(row, 'master_add3'),
+                            master_add4: getVal(row, 'master_add4'),
+                            ship_to: getVal(row, 'ship_to'),
+                            st_zip: getVal(row, 'st_zip'),
+                            barcode: getVal(row, 'barcode'),
                             sku: sku,
                             jobno: selectedJobNo,
                             jobno_type: selectedJobNo + "_" + masterDelivery.substring(0, 3),
@@ -317,13 +335,15 @@
         }
 
         function loadData() {
-            const q = document.getElementById('searchInput').value;
-            const jobno = document.getElementById('outboundJobSelect').value;
+            const q = document.getElementById('searchInput').value; // Tìm kiếm chung
+            const jobnoFromDropdown = document.getElementById('outboundJobSelect').value; // Job No từ dropdown (chưa có cont)
+            const jobnoFromExactInput = document.getElementById('jobnoExactSearchInput').value; // Job No tìm chính xác
             const noCont = document.getElementById('filterNoCont').checked;
 
             const params = new URLSearchParams({ q });
-            if (jobno) params.append('jobno', jobno);
+            if (jobnoFromDropdown) params.append('jobno', jobnoFromDropdown);
             if (noCont) params.append('noCont', 'true');
+            if (jobnoFromExactInput) params.append('exactJobno', jobnoFromExactInput);
 
             fetch(`/api/scanfile?${params.toString()}`)
             .then(r => r.json())
@@ -353,23 +373,31 @@
                 const tbody = document.getElementById('comparisonTableBody');
                 tbody.innerHTML = data.map(item => {
                     const diff = item.scanned - item.planned;
-                    const remaining = Math.max(0, item.planned - item.scanned);
                     const isMatch = item.scanned === item.planned;
                     const rowClass = isMatch ? '' : 'diff-error';
                     
+                    // Lấy thông tin Tag Label từ Master Data Map đã tải
+                    const isTagLabel = skuRemarkMap[item.sku] === 'Tag_label' ? 'Y' : 'N';
+                    
                     return `
                         <tr class="${rowClass}">
-                            <td><b>${item.jobno}</b></td>
+                            <td><b style="color:#e67e22; cursor:pointer; text-decoration:underline;" onclick="filterByJobNo('${item.jobno}')">${item.jobno}</b></td>
                             <td>${item.sku}</td>
-                            <td>${item.planned}</td>
-                            <td>${item.scanned}</td>
-                            <td>${diff > 0 ? '+' + diff : diff}</td>
-                            <td style="font-weight: bold; color: ${remaining > 0 ? '#e67e22' : '#27ae60'};">${remaining}</td>
-                            <td>${isMatch ? '<span class="diff-ok">✅ OK</span>' : '❌ SAI LỆCH'}</td>
+                            <td style="text-align:center; font-weight:bold; color:${isTagLabel === 'Y' ? '#8e44ad' : '#95a5a6'}">${isTagLabel}</td>
+                            <td style="text-align:center;">${item.planned}</td>
+                            <td style="text-align:center;">${item.scanned}</td>
+                            <td style="text-align:center; font-weight:bold;">${diff > 0 ? '+' + diff : diff}</td>
+                            <td style="text-align:center;">${isMatch ? '<span class="diff-ok">✅ Khớp</span>' : '<span style="color:red">❌ Lệch</span>'}</td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="6" style="text-align:center;">Không có dữ liệu đối soát</td></tr>';
+                }).join('') || '<tr><td colspan="7" style="text-align:center;">Không có dữ liệu đối soát</td></tr>';
             });
+        }
+
+        function filterByJobNo(jobNo) {
+            const sel = document.getElementById('outboundJobSelect');
+            sel.value = jobNo;
+            loadAllData();
         }
 
         function loadAllData() {
@@ -377,15 +405,14 @@
             loadComparison();
         }
 
-        let searchTimeout;
         function searchData() {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(loadAllData, 500);
         }
 
+        loadMasterDataMap(); // Quan trọng: Phải gọi hàm này để nạp dữ liệu mapping SKU
         loadOutboundJobs();
         loadPalletTypes();
-        loadMasterDataMap();
         loadAllData();
     </script>
 </body>

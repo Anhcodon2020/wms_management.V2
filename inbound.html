@@ -91,6 +91,7 @@
             <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
             <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
             <li><a href="/inbound.html">📥 Nhập Kho</a></li>
+            <li><a href="/tcr.html">📤 Hàng bị lỗi</a></li>
             <li><a href="/outbound">📤 Xuất Kho</a></li>
             <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
         </ul>
@@ -415,7 +416,15 @@
                     
                     if (!Array.isArray(data)) return;
 
+                    // Thêm thông báo khi không tìm thấy SKU
+                    if (data.length === 0) {
+                        showToast(`Không tìm thấy SKU nào cho Parent PO: ${parentPo}`, 'error');
+                    }
+
                     // AUTO-FILL MANCC: Lay supplier tu item dau tien trong list (vi cung 1 PO thuong cung 1 NCC)
+                    // Sắp xếp dữ liệu theo SKU
+                    data.sort((a, b) => (a.item || '').localeCompare(b.item || ''));
+
                     if (data.length > 0 && data[0].supplier) {
                         document.getElementById('mancc').value = data[0].supplier;
                         document.getElementById('tenncc').value = data[0].name_doc || '';
@@ -430,7 +439,11 @@
                     });
                     if (preSelectedSku) skuSel.value = preSelectedSku;
                 })
-                .catch(e => console.error(e));
+                .catch(e => {
+                    console.error(e);
+                    showToast('Lỗi tải danh sách SKU: ' + e.message, 'error');
+                    skuSel.innerHTML = '<option value="">-- Lỗi tải SKU --</option>';
+                });
         }
 
         // 3. Tinh toan CBM = So Carton * CBM (trong BBR)
@@ -474,13 +487,19 @@
             const row = input.closest('tr');
             const planQty = parseFloat(row.querySelector('.plan-qty').innerText) || 0;
             const recvQty = parseFloat(input.value) || 0;
+            const partialCell = row.querySelector('.qty-partial');
             const statusCell = row.querySelector('.status-cell');
             
+            const remaining = Math.max(0, planQty - recvQty);
+            if (partialCell) {
+                partialCell.innerText = remaining;
+            }
+
             let status = 'Pending';
             let color = '#95a5a6';
             
             if (recvQty > 0) {
-                if (recvQty === planQty) {
+                if (recvQty >= planQty) {
                     status = 'Receiving';
                     color = '#2ecc71';
                 } else {
@@ -498,11 +517,15 @@
         function updateTotals() {
             let totalPlan = 0;
             let totalReceive = 0;
+            let totalPartial = 0;
             document.querySelectorAll('.plan-qty').forEach(el => totalPlan += parseFloat(el.innerText) || 0);
             document.querySelectorAll('.receive-input').forEach(el => totalReceive += parseFloat(el.value) || 0);
+            document.querySelectorAll('.qty-partial').forEach(el => totalPartial += parseFloat(el.innerText) || 0);
             
             document.getElementById('totalPlan').innerText = totalPlan;
             document.getElementById('totalReceive').innerText = totalReceive;
+            const partialElem = document.getElementById('totalPartial');
+            if (partialElem) partialElem.innerText = totalPartial;
         }
 
         // Hàm hiển thị chi tiết các lần nhập của một Parent PO
@@ -698,12 +721,14 @@
                             const plannedQty = parseFloat(bbrItem.qty);
                             // Tự động gán số lượng thực nhận bằng số lượng kế hoạch từ BBR
                             const receivingQty = plannedQty; 
+                            const remainingQty = Math.max(0, plannedQty - receivingQty);
 
                             confirmBody.innerHTML += `
                                 <tr>
                                     <td>${bbrItem.po}</td>
                                     <td class="plan-qty">${plannedQty}</td>
                                     <td><input type="number" class="receive-input" value="${receivingQty}" oninput="updateRowStatus(this)"></td>
+                                    <td class="qty-partial" style="font-weight: bold; color: #e67e22;">${remainingQty}</td>
                                     <td class="status-cell" style="font-weight: bold; color: #2ecc71;">Receiving</td>
                                 </tr>
                             `;
@@ -715,6 +740,7 @@
                                 <td style="text-align:right;">Tổng cộng:</td>
                                 <td id="totalPlan">0</td>
                                 <td id="totalReceive" style="color:#d35400;">0</td>
+                                <td id="totalPartial" style="color:#e67e22; font-weight:bold;">0</td>
                                 <td></td>
                             </tr>`;
                         
@@ -763,7 +789,7 @@
                 
                 const cells = row.querySelectorAll('td');
                 const childPo = cells[0].innerText; // Cot dau tien la Child PO
-                const status = cells[3].innerText;  // Cot thu 4 la Status
+                const status = row.querySelector('.status-cell').innerText;
                 const recvQty = parseFloat(input.value) || 0;
 
                 if (status === 'Receiving' || status === 'Partial') {
@@ -957,46 +983,61 @@
                         return;
                     }
 
-                    // Gom nhóm theo Packing List
-                    let plStats = {};
+                    // Gom nhóm chi tiết theo Packing List No
+                    let groupedData = {};
                     filteredData.forEach(item => {
                         const pl = item.PackinglistNo ? item.PackinglistNo.trim() : 'N/A';
-                        if (!plStats[pl]) {
-                            plStats[pl] = {
-                                datercv: item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '',
-                                suppliers: new Set(),
-                                po: new Set(),
-                                carton: 0,
-                                cbm: 0,
-                                contxe: new Set(),
-                                labour: new Set()
-                            };
-                        }
-                        const supplierName = item.name_doc || item.MANCC || '';
-                        if (supplierName) plStats[pl].suppliers.add(supplierName);
-                        if (item.po) plStats[pl].po.add(item.po);
-                        if (item.contxe) plStats[pl].contxe.add(item.contxe);
-                        if (item.labour) plStats[pl].labour.add(item.labour);
-                        
-                        plStats[pl].carton += parseFloat(item.carton) || 0;
-                        plStats[pl].cbm += parseFloat(item.cbm) || 0;
+                        if (!groupedData[pl]) groupedData[pl] = [];
+                        groupedData[pl].push(item);
                     });
 
-                    const excelData = Object.keys(plStats).map(plKey => {
-                        const val = plStats[plKey];
-                        return {
+                    let excelData = [];
+                    let grandTotalCarton = 0;
+                    let grandTotalCbm = 0;
+                    
+                    Object.keys(groupedData).forEach(plKey => {
+                        const items = groupedData[plKey];
+                        let sumCarton = 0;
+                        let sumCbm = 0;
+                        let plDate = '';
+
+                        // Tính tổng Carton và CBM cho Packing List
+                        items.forEach(item => {
+                            sumCarton += parseFloat(item.carton) || 0;
+                            sumCbm += parseFloat(item.cbm) || 0;
+                            // Lấy ngày nhận của dòng đầu tiên làm ngày đại diện
+                            if (!plDate && item.datercv) {
+                                plDate = new Date(item.datercv).toLocaleDateString('vi-VN');
+                            }
+                        });
+
+                        // Đẩy 1 dòng tổng hợp duy nhất vào file Excel
+                        excelData.push({
+                            'Ngày': plDate,
                             'Packing List No': plKey,
-                            'Ngày Nhận': val.datercv,
-                            'Nhà Cung Cấp': Array.from(val.suppliers).join(', '),
-                            'Danh sách PO': Array.from(val.po).join(', '),
-                            'Tổng Carton': val.carton,
-                            'Tổng CBM': parseFloat(val.cbm.toFixed(3)),
-                            'Cont/Xe': Array.from(val.contxe).join(', '),
-                            'Labour': Array.from(val.labour).join(', ')
-                        };
+                            'Tổng Carton': sumCarton,
+                            'Tổng CBM': parseFloat(sumCbm.toFixed(3))
+                        });
+                        
+                        // Cộng dồn vào tổng cộng tất cả
+                        grandTotalCarton += sumCarton;
+                        grandTotalCbm += sumCbm;
+                    });
+
+                    // Thêm một dòng trống để phân cách, sau đó là dòng TỔNG CỘNG TẤT CẢ
+                    excelData.push({});
+                    excelData.push({
+                        'Ngày': '',
+                        'Packing List No': 'TỔNG CỘNG TẤT CẢ',
+                        'Tổng Carton': grandTotalCarton,
+                        'Tổng CBM': parseFloat(grandTotalCbm.toFixed(3))
                     });
 
                     const ws = XLSX.utils.json_to_sheet(excelData);
+                    
+                    // Chỉnh kích thước cột (Width) cho dễ nhìn trong Excel
+                    ws['!cols'] = [{wch: 15}, {wch: 25}, {wch: 15}, {wch: 15}];
+                    
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Inbound Data");
                     

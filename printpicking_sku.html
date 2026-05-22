@@ -74,54 +74,48 @@
 
                 const rcvDate = job.items[0].datercv ? new Date(job.items[0].datercv).toLocaleDateString('vi-VN') : '-';
 
-                // --- LOGIC GROUP BY SKU ---
-                const skuGroups = {};
+                // --- LOGIC GROUP BY SKU + FDC ---
+                const skuFdcGroups = {};
                 job.items.forEach(item => {
                     const sku = item.sku || 'N/A';
-                    if (!skuGroups[sku]) {
-                        skuGroups[sku] = {
+                    const fdc = item.fdc || 'N/A';
+                    const key = `${sku}__${fdc}`;
+                    if (!skuFdcGroups[key]) {
+                        skuFdcGroups[key] = {
                             sku: sku,
-                            totalCarton: 0,
-                            totalCbm: 0,
+                            fdc: fdc,
+                            fdcCarton: 0,
+                            fdcCbm: 0,
                             locations: new Set(),
-                            dcSummary: {},
                             chipboards: new Set()
                         };
                     }
-                    skuGroups[sku].totalCarton += parseFloat(item.carton || 0);
-                    skuGroups[sku].totalCbm += parseFloat(item.cbm || 0);
-                    if (item.lct) skuGroups[sku].locations.add(item.lct);
-                    
-                    // Gom nhóm theo DC (FDC)
-                    const dc = item.fdc || 'N/A';
-                    skuGroups[sku].dcSummary[dc] = (skuGroups[sku].dcSummary[dc] || 0) + parseFloat(item.carton || 0);
-                    
-                    if (item.chipboard) skuGroups[sku].chipboards.add(item.chipboard);
+                    skuFdcGroups[key].fdcCarton += parseFloat(item.carton || 0);
+                    skuFdcGroups[key].fdcCbm += parseFloat(item.cbm || 0);
+                    if (item.lct) skuFdcGroups[key].locations.add(item.lct);
+                    if (item.chipboard) skuFdcGroups[key].chipboards.add(item.chipboard);
                 });
 
                 // Sắp xếp theo SKU alphabet
-                const sortedSkus = Object.values(skuGroups).sort((a, b) => a.sku.localeCompare(b.sku));
+                const sortedSkuFdcs = Object.values(skuFdcGroups).sort((a, b) => {
+                    const skuCompare = a.sku.localeCompare(b.sku);
+                    return skuCompare || a.fdc.localeCompare(b.fdc);
+                });
 
                 let tableRows = '';
                 let grandCarton = 0;
                 let grandCbm = 0;
 
-                sortedSkus.forEach(group => {
-                    grandCarton += group.totalCarton;
-                    grandCbm += group.totalCbm;
-                    
-                    // Tạo chuỗi hiển thị DC: Qty
-                    const dcText = Object.entries(group.dcSummary)
-                        .map(([dc, qty]) => `<span style="white-space:nowrap"><b>${dc}</b>: ${qty}</span>`)
-                        .join(', ');
-
+                sortedSkuFdcs.forEach(group => {
+                    grandCarton += group.fdcCarton;
+                    grandCbm += group.fdcCbm;
                     tableRows += `
                         <tr>
                             <td><b style="font-size:15px;">${group.sku}</b></td>
-                            <td style="text-align:center; font-weight:bold; font-size:16px;">${group.totalCarton}</td>
-                            <td>${group.totalCbm.toFixed(3)}</td>
+                            <td style="text-align:center; font-weight:bold;">${group.fdc}</td>
+                            <td style="text-align:center; font-weight:bold; font-size:16px;">${group.fdcCarton}</td>
+                            <td>${group.fdcCbm.toFixed(3)}</td>
                             <td>${Array.from(group.locations).join(', ') || '-'}</td>
-                            <td style="font-size:12px;">${dcText}</td>
                             <td style="text-align:center;">${Array.from(group.chipboards).join(', ') || '-'}</td>
                         </tr>`;
                 });
@@ -144,20 +138,21 @@
                         <table class="picking-table">
                             <thead>
                                 <tr>
-                                    <th style="width:20%">Mã SKU</th>
-                                    <th style="width:10%; text-align:center;">Tổng Carton</th>
+                                    <th style="width:24%">Mã SKU</th>
+                                    <th style="width:12%; text-align:center;">FDC</th>
+                                    <th style="width:12%; text-align:center;">Carton FDC</th>
                                     <th style="width:10%">Tổng CBM</th>
-                                    <th style="width:15%">Vị trí (LCT)</th>
-                                    <th style="width:34%">Tổng hợp DC</th>
-                                    <th style="width:11%; text-align:center;">Chip</th>
+                                    <th style="width:30%">Vị trí (LCT)</th>
+                                    <th style="width:12%; text-align:center;">Chip</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${tableRows}
                                 <tr class="total-row">
                                     <td style="text-align:right">TỔNG CỘNG JOB:</td>
+                                    <td></td>
                                     <td style="text-align:center; font-size:16px;">${grandCarton}</td>
-                                    <td colspan="4">CBM: ${grandCbm.toFixed(3)}</td>
+                                    <td colspan="3">CBM: ${grandCbm.toFixed(3)}</td>
                                 </tr>
                             </tbody>
                         </table>

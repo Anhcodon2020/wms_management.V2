@@ -32,6 +32,7 @@
         <a href="http://localhost:3001" id="mainLink" target="_blank" class="btn btn-primary">🌐 Mở Trang Chủ (Localhost)</a>
         <a href="http://localhost:3001/supplier" id="supplierLink" target="_blank" class="btn btn-secondary" style="background-color: #e67e22;">🏭 Quản lý Nhà Cung Cấp</a>
         <a href="http://localhost:3001/masterdata" id="masterDataLink" target="_blank" class="btn btn-secondary" style="background-color: #8e44ad;">📦 Quản lý Master Data</a>
+        <a href="http://localhost:3001/smartpallet" id="smartPalletLink" target="_blank" class="btn btn-secondary" style="background-color: #27ae60;">🤖 AI Smart Pallet</a>
         <a href="https://console.aiven.io/" target="_blank" class="btn btn-secondary">🗄️ Quản lý Database (Aiven)</a>
         
         <div class="status">
@@ -51,6 +52,9 @@
 
             const masterDataLink = document.getElementById('masterDataLink');
             masterDataLink.href = `http://localhost:${port}/masterdata`;
+
+            const smartPalletLink = document.getElementById('smartPalletLink');
+            smartPalletLink.href = `http://localhost:${port}/smartpallet`;
         }
     </script>
 </body>

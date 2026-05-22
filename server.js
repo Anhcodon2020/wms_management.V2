@@ -261,6 +261,17 @@ app.get(['/outbound', '/outbound.html'], (req, res) => {
   });
 });
 
+// --- ROUTE MOI: Trang AI Smart Pallet ---
+app.get(['/smartpallet', '/smartpallet.html'], (req, res) => {
+  fs.readFile(__dirname + '/smartpallet.html', 'utf8', (err, data) => {
+    if (err) {
+      res.send('<h1>Lỗi 404: Không tìm thấy file smartpallet.html</h1>');
+      return;
+    }
+    res.send(data);
+  });
+});
+
 // --- ROUTE MOI: Trang Scan File ---
 app.get(['/scanfile', '/scanfile.html'], (req, res) => {
   fs.readFile(__dirname + '/scanfile.html', 'utf8', (err, data) => {
@@ -365,6 +376,17 @@ app.get(['/follow', '/follow.html'], (req, res) => {
   fs.readFile(__dirname + '/follow.html', 'utf8', (err, data) => {
     if (err) {
       res.send('<h1>Lỗi 404: Không tìm thấy file follow.html</h1>');
+      return;
+    }
+    res.send(data);
+  });
+});
+
+// --- ROUTE MOI: Trang In Nhãn Pallet ---
+app.get(['/printPalletLabel', '/printPalletLabel.html'], (req, res) => {
+  fs.readFile(__dirname + '/printPalletLabel.html', 'utf8', (err, data) => {
+    if (err) {
+      res.send('<h1>Lỗi 404: Không tìm thấy file printPalletLabel.html</h1>');
       return;
     }
     res.send(data);
@@ -1146,8 +1168,45 @@ app.delete('/api/importshipment/shipment/:shipmentorder', (req, res) => {
 
 // --- API: Lay danh sach Job No chua co so Container tu Outbound ---
 app.get('/api/outbound/dropdown/jobs-no-cont', (req, res) => {
-    const sql = "SELECT DISTINCT jobno FROM outbound WHERE container IS NULL OR TRIM(container) = '' ORDER BY jobno DESC";
+    const sql = `
+        SELECT DISTINCT jobno
+        FROM outbound
+        WHERE jobno IS NOT NULL
+          AND TRIM(jobno) <> ''
+          AND (container IS NULL OR TRIM(container) = '')
+        ORDER BY jobno DESC
+    `;
     connection.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// --- API: Lay chi tiet SKU va kich thuoc tu Master Data theo Job No (Outbound) ---
+app.get('/api/outbound/skus-details/:jobno', (req, res) => {
+    const jobno = req.params.jobno;
+    const sql = `
+        SELECT o.sku, o.carton as qty, o.fdc, m.length, m.width, m.height, m.weight 
+        FROM outbound o 
+        LEFT JOIN masterdata m ON o.sku = m.sku 
+        WHERE o.jobno = ?
+          AND TRIM(COALESCE(o.sku, '')) <> '0'`;
+    connection.query(sql, [jobno], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+// --- API: Lay chi tiet SKU va kich thuoc tu Master Data theo Job No (Outbound) ---
+app.get('/api/outbound/skus-details/:jobno', (req, res) => {
+    const jobno = req.params.jobno;
+    const sql = `
+        SELECT o.sku, o.carton as qty, o.fdc, m.length, m.width, m.height, m.weight 
+        FROM outbound o 
+        LEFT JOIN masterdata m ON o.sku = m.sku 
+        WHERE o.jobno = ?
+          AND TRIM(COALESCE(o.sku, '')) <> '0'`;
+    connection.query(sql, [jobno], (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });

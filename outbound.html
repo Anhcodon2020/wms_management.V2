@@ -184,6 +184,7 @@
             <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
             <li><a href="/scanfile">📑 Scan File Import</a></li>
             <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/smartpallet">🤖 AI Smart Pallet</a></li>
             <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
             <li><a href="/inbound">📥 Nhập Kho</a></li>
             <li><a href="/outbound">📤 Xuất Kho</a></li>
@@ -199,6 +200,10 @@
                 <input type="date" id="startDate" title="Từ ngày Stuffing" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
                 <span style="color:#666">-</span>
                 <input type="date" id="endDate" title="Đến ngày Stuffing" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                
+                <select id="noContJobSelect" onchange="filterByNoContJob()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 180px; background: #fffbe6; font-weight: 600;">
+                    <option value="">-- Job chưa có Cont --</option>
+                </select>
                 
                 <select id="noContJobSelect" onchange="filterByNoContJob()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 180px; background: #fffbe6; font-weight: 600;">
                     <option value="">-- Job chưa có Cont --</option>
@@ -1048,6 +1053,7 @@
             document.getElementById('searchInput').value = val || '';
             loadData();
         }
+
 
         function deleteOutboundItem(id, jobno) {
             if (!confirm(`Bạn có chắc chắn muốn xóa dòng chi tiết này của Job: ${jobno}?`)) return;

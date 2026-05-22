@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Nhãn Pallet - WMS System</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .no-print-zone { 
+            background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px;
+            position: sticky; top: 0; z-index: 1000;
+        }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-print { background: #4f46e5; color: white; }
+        .btn-close { background: #94a3b8; color: white; }
+
+        @page { size: A4 portrait; margin: 10mm; }
+        
+        @media print {
+            .no-print-zone { display: none !important; }
+            body { background: none; padding: 0; }
+            .label-page { box-shadow: none !important; margin: 0 !important; border: 2px solid #000 !important; page-break-after: always; }
+        }
+
+        .label-page { 
+            background: #fff;
+            width: 190mm; 
+            height: 270mm; 
+            margin: 0 auto 20px auto;
+            padding: 10mm; 
+            box-sizing: border-box; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #ddd;
+        }
+        .label-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 5px solid #000; padding-bottom: 15px; margin-bottom: 20px; }
+        .label-logo { width: 140px; }
+        .pallet-number { font-size: 70px; font-weight: 800; color: #000; line-height: 1; }
+        
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .info-item { border: 3px solid #000; padding: 12px; }
+        .info-label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #444; margin-bottom: 4px; }
+        .info-value { font-size: 28px; font-weight: 800; }
+
+        .sku-table { width: 100%; border-collapse: collapse; margin-top: 10px; flex: 1; }
+        .sku-table th, .sku-table td { border: 1px solid #000; padding: 12px 8px; text-align: left; }
+        .sku-table th { background: #f1f5f9; font-size: 13px; font-weight: bold; text-transform: uppercase; }
+        .sku-table td { font-size: 15px; }
+        .sku-name { font-weight: bold; font-size: 17px; }
+
+        .label-footer { margin-top: 20px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 13px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; }
+        .barcode-area { text-align: center; border: 2px solid #000; padding: 15px; margin-top: 15px; font-weight: bold; }
+        .barcode-text { font-size: 24px; letter-spacing: 5px; }
+    </style>
+</head>
+<body>
+    <div class="no-print-zone">
+        <span style="font-weight: bold; color: #1e293b;">Xem Trước Bản In Nhãn Pallet</span>
+        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
+    </div>
+
+    <div id="printContainer"></div>
+
+    <script>
+        const rawData = localStorage.getItem('printPalletLabelsData');
+        if (!rawData) {
+            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu nhãn Pallet!</h1></div>";
+        } else {
+            const pallets = JSON.parse(rawData);
+            const container = document.getElementById('printContainer');
+
+            pallets.forEach(p => {
+                let rows = p.items.map(item => `
+                    <tr>
+                        <td class="sku-name">${item.sku}</td>
+                        <td>${item.jobno}</td>
+                        <td>${item.fdc}</td>
+                        <td style="text-align:center; font-weight:bold; font-size: 20px;">${item.qty}</td>
+                    </tr>
+                `).join('');
+
+                container.innerHTML += `
+                    <div class="label-page">
+                        <div class="label-header">
+                            <img src="logo.png" class="label-logo" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/b/b1/KLN_Logo.png'">
+                            <div class="pallet-number">PALLET #${p.palletNumber}</div>
+                        </div>
+                        
+                        <div class="info-grid">
+                            <div class="info-item"><div class="info-label">Loại Pallet</div><div class="info-value">${p.palletType}</div></div>
+                            <div class="info-item"><div class="info-label">Tổng Trọng Lượng (KG)</div><div class="info-value">${p.totalWeight}</div></div>
+                            <div class="info-item"><div class="info-label">Tổng Thể Tích (CBM)</div><div class="info-value">${p.totalCbm}</div></div>
+                            <div class="info-item"><div class="info-label">Ngày Đóng Hàng</div><div class="info-value">${new Date().toLocaleDateString('vi-VN')}</div></div>
+                        </div>
+
+                        <table class="sku-table">
+                            <thead><tr><th>Mã SKU / Tên Hàng</th><th>Job No</th><th>FDC</th><th style="width: 80px; text-align:center;">Số lượng</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+
+                        <div class="barcode-area">
+                            <div class="barcode-text">*PL${p.palletNumber}*</div>
+                            <div style="font-size: 10px; margin-top: 5px;">MÃ ĐỊNH DANH PALLET</div>
+                        </div>
+                        
+                        <div class="label-footer">
+                            <div>Hệ Thống WMS - Smart Pallet Pro</div>
+                            <div>XÁC NHẬN CỦA KHO: ...........................................</div>
+                        </div>
+                    </div>`;
+            });
+            setTimeout(() => window.print(), 800);
+        }
+    </script>
+</body>
+</html>

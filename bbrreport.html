@@ -97,6 +97,7 @@
             <li><a href="/supplier">🏭 Nhà Cung Cấp</a></li>
             <li><a href="/scanfile">📑 Scan File Import</a></li>
             <li><a href="/pallet">🪵 Quản Lý Pallet</a></li>
+            <li><a href="/smartpallet">🤖 AI Smart Pallet</a></li>
             <li><a href="/bbr">📊 Báo Cáo BBR</a></li>
             <li><a href="/inbound">📥 Nhập Kho</a></li>
             <li><a href="/outbound">📤 Xuất Kho</a></li>
@@ -180,6 +181,20 @@
                     </tr>
                 </thead>
                 <tbody id="supplierSummaryBody"></tbody>
+            </table>
+        </div>
+
+        <!-- Bang tong hop theo Hub DC -->
+        <div class="supplier-summary-section" id="hubDcSummarySection" style="display:none; border-top: 4px solid #3498db;">
+            <div class="supplier-summary-header" style="border-left-color: #3498db;">🏢 Tổng Hợp Theo Hub DC</div>
+            <table class="summary-table" style="max-width: 400px;">
+                <thead>
+                    <tr>
+                        <th>Hub DC</th>
+                        <th>Tổng CBM</th>
+                    </tr>
+                </thead>
+                <tbody id="hubDcSummaryBody"></tbody>
             </table>
         </div>
 
@@ -413,6 +428,7 @@
                 };
                 let chipboardStats = {}; // Bien luu thong ke Chipboard
                 let supplierStats = {}; // Bien luu thong ke theo NCC
+                let hubDcStats = {}; // Bien luu thong ke theo Hub DC
 
                 data.forEach((item, index) => {
                     // Lấy CBM từ Master Data (ưu tiên), nếu không có thì lấy từ dữ liệu BBR cũ
@@ -457,6 +473,11 @@
                     if (rawKind.includes('1.2') || rawKind.includes('1m2')) supplierStats[supName].pal_1m2 += palletNeed;
                     else if (rawKind.includes('1.6') || rawKind.includes('1m6')) supplierStats[supName].pal_1m6 += palletNeed;
                     else if (rawKind.includes('1.9') || rawKind.includes('1m9')) supplierStats[supName].pal_1m9 += palletNeed;
+
+                    // --- Logic Hub DC ---
+                    const hub = item.hubdc || item.hub_DC || 'N/A';
+                    if (!hubDcStats[hub]) hubDcStats[hub] = 0;
+                    hubDcStats[hub] += lineTotal;
 
                     // --- Logic Chipboard ---
                     const cb = item.mapped_chipboard; // Lay tu Master Data
@@ -545,6 +566,20 @@
                     }
                 } else {
                     supSection.style.display = 'none';
+                }
+
+                // Hien thi bang tong hop Hub DC
+                const hubSection = document.getElementById('hubDcSummarySection');
+                const hubBody = document.getElementById('hubDcSummaryBody');
+                hubBody.innerHTML = '';
+
+                if (Object.keys(hubDcStats).length > 0) {
+                    hubSection.style.display = 'block';
+                    for (const [hub, val] of Object.entries(hubDcStats)) {
+                        hubBody.innerHTML += `<tr><td><b>${hub}</b></td><td style="color:#3498db; font-weight:bold;">${val.toFixed(3)} m³</td></tr>`;
+                    }
+                } else {
+                    hubSection.style.display = 'none';
                 }
             });
         }
@@ -657,6 +692,7 @@
             let stats = { '1m2': 0, '1m6': 0, '1m9': 0, 'other': 0, 'total': 0 };
             let chipboardStats = {};
             let supplierStats = {};
+            let hubDcStats = {};
             
             // Chuan bi du lieu chi tiet (Sheet 2)
             const exportDetails = dataToProcess.map(item => {
@@ -702,6 +738,11 @@
                 if (!supplierStats[supName]) supplierStats[supName] = { cbm: 0 };
                 supplierStats[supName].cbm += lineTotal;
 
+                // Excel: Tinh Hub DC
+                const hub = item.hubdc || item.hub_DC || 'N/A';
+                if (!hubDcStats[hub]) hubDcStats[hub] = 0;
+                hubDcStats[hub] += lineTotal;
+
                 return {
                     "DC": item.po ? parseInt(item.po.substring(0, 3)) : '',
                     "Parent PO": item.parentpo || '',
@@ -728,6 +769,12 @@
             exportSummary.push([], ["TỔNG HỢP THEO NCC", "Tổng CBM"]);
             for (const [sup, val] of Object.entries(supplierStats)) {
                  exportSummary.push([sup, val.cbm]);
+            }
+
+            // Them thong ke Hub DC vao Excel
+            exportSummary.push([], ["TỔNG HỢP THEO HUB DC", "Tổng CBM"]);
+            for (const [hub, val] of Object.entries(hubDcStats)) {
+                 exportSummary.push([hub, val]);
             }
 
             // Them thong ke Chipboard vao Excel neu co

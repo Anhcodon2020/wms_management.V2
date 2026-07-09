@@ -17,11 +17,13 @@
         .btn-close { background: #95a5a6; color: white; }
 
         @page { size: A4 landscape; margin: 5mm; }
+        @page inspection { size: A4 portrait; margin: 5mm; }
         
         @media print {
             .no-print-zone { display: none !important; }
             body { background: none; padding: 0; }
             .clp-page { box-shadow: none !important; margin: 0 !important; border: none !important; }
+            .inspection-page { box-shadow: none !important; margin: 0 !important; }
         }
 
         .clp-page { 
@@ -59,6 +61,27 @@
             .loose-table th:nth-child(3) { width: 20%; }
             .loose-table th:nth-child(4) { width: 60%; }
         .clp-sign { flex: 1; text-align: center; font-size: 12px; font-weight: bold; }
+        .inspection-page {
+            page: inspection;
+            background: #fff;
+            width: 200mm;
+            min-height: 287mm;
+            margin: 0 auto 20px;
+            padding: 4mm;
+            box-sizing: border-box;
+            box-shadow: 0 0 10px rgba(0,0,0,.1);
+            page-break-after: always;
+            font-family: Arial, sans-serif;
+            font-size: 8px;
+        }
+        .inspection-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .inspection-table th, .inspection-table td { border: 1px solid #000; padding: 2px 3px; vertical-align: middle; }
+        .inspection-title { font-size: 14px; font-weight: bold; text-align: center; line-height: 1.25; }
+        .inspection-section { font-weight: bold; background: #eee; text-align: left; }
+        .inspection-check { width: 23px; height: 13px; display: inline-block; border: 1px solid #000; vertical-align: middle; }
+        .inspection-items td { height: 15px; }
+        .inspection-write { height: 18px; }
+        .inspection-pictures td { height: 44px; text-align: center; color: #777; }
     </style>
 </head>
 <body>
@@ -85,6 +108,94 @@
             }
 
             const container = document.getElementById('printContainer');
+
+            const inspectionItems = [
+                ['Font Wall', 'Mặt trước', true, true],
+                ['Left side', 'Mặt trái', true, true],
+                ['Right side', 'Mặt phải', true, true],
+                ['Floor', 'Sàn xe', true, true],
+                ['Ceiling / Roof', 'Trần / Nóc', true, true],
+                ['Outside / Inside door', 'Bên trong / Bên ngoài cửa', true, true],
+                ['Outside / Undercarriage', 'Bên ngoài / Gầm xe', true, true],
+                ['Container is clean & free of evidence of invasive species', 'Container rỗng, không nhiễm côn trùng, tổ trứng, bụi bẩn, hạt giống…', true, true],
+                ['Bumper', 'Khung chống đỡ va chạm', false, true],
+                ['Engine', 'Động cơ', false, true],
+                ['Tires', 'Vỏ xe', false, true],
+                ['Floor', 'Sàn xe', false, true],
+                ['Fuel tanks', 'Bồn chứa nhiên liệu', false, true],
+                ['Cab / Storage Compartments', 'Cabin / khoang lưu giữ phụ tùng', false, true],
+                ['Air Tanks', 'Bình khí nén', false, true],
+                ['Drive Shafts', 'Các thanh trục xe', false, true],
+                ['Fifth Wheel', 'Bánh phụ', false, true],
+                ['Exhaust', 'Ống xả khói', false, true]
+            ];
+
+            const safe = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+
+            const renderInspectionForm = (job, first, stuffDate) => {
+                const checkRows = inspectionItems.map((item, index) => `
+                    <tr class="inspection-items">
+                        <td style="text-align:center">${index + 1}</td>
+                        <td><b>${item[0]}</b><br>${item[1]}</td>
+                        <td style="text-align:center">${item[2] ? '<span class="inspection-check"></span>' : ''}</td>
+                        <td style="text-align:center">${item[2] ? '<span class="inspection-check"></span>' : ''}</td>
+                        <td style="text-align:center">${item[3] ? '<span class="inspection-check"></span>' : ''}</td>
+                        <td style="text-align:center">${item[3] ? '<span class="inspection-check"></span>' : ''}</td>
+                        <td></td>
+                    </tr>`).join('');
+
+                const cargoRows = (job.items || []).slice(0, 6).map((item, index) => `
+                    <tr>
+                        <td style="text-align:center">${index + 1}</td>
+                        <td>${safe(item.description || item.commodity || '')}</td>
+                        <td>${safe(item.sku || '')}</td>
+                        <td>${safe(item.parentpo || item.childpo || '')}</td>
+                        <td style="text-align:center">${safe(item.carton || '')}</td>
+                        <td style="text-align:right">${(parseFloat(item.cbm) || 0).toFixed(3)}</td>
+                        <td></td>
+                    </tr>`).join('');
+                const blankCargoRows = Array.from({ length: Math.max(0, 6 - (job.items || []).slice(0, 6).length) },
+                    () => '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
+                const peopleRows = Array.from({ length: 5 }, (_, index) =>
+                    `<tr><td style="text-align:center">${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('');
+
+                return `
+                    <div class="inspection-page">
+                        <table class="inspection-table">
+                            <tr>
+                                <td rowspan="3" style="width:18%; text-align:center"><b>KILVN</b></td>
+                                <td rowspan="3" colspan="4" class="inspection-title">GA-CTPAT-CONTAINER INSPECTION-REPORT<br>BIÊN BẢN XÁC NHẬN TÌNH TRẠNG CONTAINER</td>
+                                <td><b>Document No.</b></td><td>GA-REP-020</td>
+                            </tr>
+                            <tr><td><b>Revision</b></td><td>01</td></tr>
+                            <tr><td><b>Valid date</b></td><td>25-Aug-21</td></tr>
+                            <tr><td colspan="7" style="text-align:right"><b>Date (Ngày):</b> ${safe(stuffDate)}</td></tr>
+                            <tr><td colspan="2"><b>Container size:</b></td><td colspan="5">${safe(first.containersize || first.container_size || first.containertype || '')}</td></tr>
+                            <tr><td colspan="2"><b>Container number (Số Container):</b></td><td colspan="2">${safe(first.container || '')}</td><td><b>Seal number (Số Seal):</b></td><td colspan="2">${safe(first.seal || '')}</td></tr>
+                            <tr><td colspan="2"><b>Name of truck owner (Tên chủ xe/tài xế):</b></td><td colspan="2"></td><td><b>Truck number (Số Xe):</b></td><td colspan="2"></td></tr>
+                            <tr><td colspan="2"><b>Date/Time container arrival (Ngày giờ Container đến):</b></td><td colspan="2"></td><td><b>Date/Time container out of factory (Ngày giờ Container đi):</b></td><td colspan="2"></td></tr>
+                            <tr><td colspan="2"><b>Date/Time container inspection (Ngày giờ kiểm Container):</b></td><td colspan="5"></td></tr>
+                            <tr>
+                                <th style="width:4%">STT</th><th style="width:36%">Nội dung kiểm tra</th>
+                                <th colspan="2">1. Container</th><th colspan="2">2. Trailer</th><th>3. Remark</th>
+                            </tr>
+                            <tr><th></th><th></th><th>Tốt</th><th>Không tốt</th><th>Tốt</th><th>Không tốt</th><th></th></tr>
+                            ${checkRows}
+                            <tr><td colspan="2"><b>Kết luận / Result:</b></td><td colspan="2"><span class="inspection-check"></span> Được phép đóng hàng</td><td colspan="3"><span class="inspection-check"></span> Không được phép đóng hàng</td></tr>
+                            <tr><td colspan="3"><b>Date/Time start of loading cargo<br>(Ngày giờ bắt đầu đóng hàng)</b></td><td></td><td colspan="2"><b>Date/Time end of loading cargo<br>(Ngày giờ kết thúc đóng hàng)</b></td><td></td></tr>
+                            <tr><td colspan="7" class="inspection-section">Cargoes loaded in container</td></tr>
+                            <tr><th>STT<br>No</th><th>Hàng hóa<br>Commodity</th><th>Mã hàng<br>Style</th><th>Số PO<br>PO#</th><th>Số lượng thùng<br>No of cartons</th><th>Số khối<br>CBM</th><th>Ghi chú<br>Remark</th></tr>
+                            ${cargoRows}${blankCargoRows}
+                            <tr><td colspan="7" class="inspection-section">Công nhân viên tham gia xuất hàng (List of people taking part)</td></tr>
+                            <tr><th>STT</th><th>Họ & Tên<br>Full name</th><th>Mã số<br>ID#</th><th>Bộ phận<br>Department</th><th>Giờ bắt đầu<br>Start time</th><th>Giờ kết thúc<br>End time</th><th>Ký tên<br>Signature</th></tr>
+                            ${peopleRows}
+                            <tr><td colspan="7" class="inspection-section">Hình minh họa (Picture)</td></tr>
+                            <tr class="inspection-pictures"><td colspan="3">PICTURE 1</td><td colspan="2">PICTURE 2</td><td colspan="2">PICTURE 3</td></tr>
+                        </table>
+                    </div>`;
+            };
 
             jobData.forEach(job => {
                 const first = job.items[0] || {};
@@ -201,6 +312,8 @@
                             <div class="clp-sign">XÁC NHẬN CỦA KHO<br><br><br><br>(Ký & Ghi rõ họ tên)</div>
                         </div>
                     </div>`;
+
+                container.innerHTML += renderInspectionForm(job, first, stuffDate);
             });
         }
     </script>

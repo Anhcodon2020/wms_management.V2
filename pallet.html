@@ -38,6 +38,8 @@
         .btn-out { background-color: #e67e22; }
         .btn-out:hover { background-color: #d35400; }
         .btn-delete { padding: 5px 10px; background-color: #e74c3c; color: white; border-radius: 3px; font-size: 12px; }
+        .filter-card { display: flex; justify-content: space-between; align-items: flex-end; gap: 15px; flex-wrap: wrap; }
+        .filter-status { font-size: 13px; color: #2c3e50; font-weight: 600; }
 
         .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); opacity: 0; transition: 0.5s; }
         .toast.show { visibility: visible; opacity: 1; bottom: 50px; }
@@ -91,6 +93,17 @@
                     <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">Tồn: <span id="stock_19">0</span></div>
                 </div>
             </div>
+        </div>
+
+        <div class="card filter-card">
+            <div class="form-inline">
+                <div class="form-group">
+                    <label>Ngay</label>
+                    <input type="date" id="filter_date" onchange="applyPalletDateFilter()">
+                </div>
+                <button class="btn" style="background:#3498db; color:white;" onclick="clearPalletDateFilter()">Tat ca</button>
+            </div>
+            <div class="filter-status" id="filter_status">Dang tai du lieu...</div>
         </div>
 
         <div class="pallet-container">
@@ -159,6 +172,10 @@
                             <label>SL</label>
                             <input type="number" id="qty_out" style="width: 70px;">
                         </div>
+                        <div class="form-group">
+                            <label>Shipment</label>
+                            <input type="text" id="shipment_out" placeholder="Shipment...">
+                        </div>
                         <button class="btn btn-out" onclick="addPalletOut()">Xuất</button>
                     </div>
                 </div>
@@ -169,6 +186,7 @@
                                 <th class="th-out">Ngày</th>
                                 <th class="th-out">Loại</th>
                                 <th class="th-out">SL</th>
+                                <th class="th-out">Shipment</th>
                                 <th class="th-out">Xóa</th>
                             </tr>
                         </thead>
@@ -197,6 +215,114 @@
     <div id="toast" class="toast"></div>
 
     <script>
+        let allPalletInData = [];
+        let allPalletOutData = [];
+
+        function toDateInputValue(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function parseLocalDate(value) {
+            if (!value) return null;
+            const [year, month, day] = value.split('T')[0].split('-').map(Number);
+            if (!year || !month || !day) return null;
+            return new Date(year, month - 1, day);
+        }
+
+        function getTransDateValue(value) {
+            if (!value) return '';
+            const raw = value.toString();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+            const date = new Date(raw);
+            if (Number.isNaN(date.getTime())) return raw.split('T')[0];
+            return toDateInputValue(date);
+        }
+
+        function isInSelectedDateRange(item) {
+            const selectedDate = document.getElementById('filter_date').value;
+            if (!selectedDate || !item.trans_date) return true;
+            const itemDate = getTransDateValue(item.trans_date);
+            return itemDate === selectedDate;
+        }
+
+        function updateFilterStatus(inCount, outCount) {
+            const selectedDate = document.getElementById('filter_date').value;
+            const status = document.getElementById('filter_status');
+
+            if (!selectedDate) {
+                status.innerText = `Dang hien thi tat ca du lieu - Nhap: ${inCount}, Xuat: ${outCount}`;
+                return;
+            }
+
+            status.innerText = `Dang hien thi ngay ${parseLocalDate(selectedDate).toLocaleDateString('vi-VN')} - Nhap: ${inCount}, Xuat: ${outCount}`;
+        }
+
+        function renderPalletData(inData, outData) {
+            const filteredInData = inData.filter(isInSelectedDateRange);
+            const filteredOutData = outData.filter(isInSelectedDateRange);
+
+            const tbody = document.getElementById('inTableBody');
+            tbody.innerHTML = filteredInData.map(item => `
+                <tr>
+                    <td>${new Date(item.trans_date).toLocaleDateString('vi-VN')}</td>
+                    <td><b>${item.pallet_name || 'Khong xac dinh'}</b></td>
+                    <td>${item.quantity}</td>
+                    <td>${item.ghichu || '-'}</td>
+                    <td><button class="btn-delete" onclick="deleteIn(${item.id})">x</button></td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" style="text-align:center;">Trong</td></tr>';
+
+            const tbodyOut = document.getElementById('outTableBody');
+            tbodyOut.innerHTML = filteredOutData.map(item => `
+                <tr>
+                    <td>${new Date(item.trans_date).toLocaleDateString('vi-VN')}</td>
+                    <td><b>${item.pallet_name || '...'}</b></td>
+                    <td>${item.quantity}</td>
+                    <td>${item.shipment || '-'}</td>
+                    <td><button class="btn-delete" onclick="deleteOut(${item.id})">x</button></td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" style="text-align:center;">Trong</td></tr>';
+
+            const stats = {
+                '12': { in: 0, out: 0 },
+                '16': { in: 0, out: 0 },
+                '19': { in: 0, out: 0 }
+            };
+
+            const process = (item, type) => {
+                const name = (item.pallet_name || '').toString().toLowerCase();
+                const qty = Number(item.quantity) || 0;
+                if (name.includes('1.2') || name.includes('1m2')) stats['12'][type] += qty;
+                else if (name.includes('1.6') || name.includes('1m6')) stats['16'][type] += qty;
+                else if (name.includes('1.9') || name.includes('1m9')) stats['19'][type] += qty;
+            };
+
+            filteredInData.forEach(item => process(item, 'in'));
+            filteredOutData.forEach(item => process(item, 'out'));
+
+            ['12', '16', '19'].forEach(size => {
+                const i = stats[size].in;
+                const o = stats[size].out;
+                document.getElementById(`in_${size}`).innerText = i;
+                document.getElementById(`out_${size}`).innerText = o;
+                document.getElementById(`stock_${size}`).innerText = i - o;
+            });
+
+            updateFilterStatus(filteredInData.length, filteredOutData.length);
+        }
+
+        function applyPalletDateFilter() {
+            renderPalletData(allPalletInData, allPalletOutData);
+        }
+
+        function clearPalletDateFilter() {
+            document.getElementById('filter_date').value = '';
+            applyPalletDateFilter();
+        }
+
         function showToast(msg) {
             const t = document.getElementById('toast');
             t.innerText = msg;
@@ -233,6 +359,10 @@
                 fetch('/api/pallets/out').then(r => r.json())
             ])
             .then(([inData, outData]) => {
+                allPalletInData = inData;
+                allPalletOutData = outData;
+                renderPalletData(allPalletInData, allPalletOutData);
+                return;
                 // 1. Hiển thị bảng Nhập
                 const tbody = document.getElementById('inTableBody');
                 tbody.innerHTML = inData.map(item => `
@@ -313,7 +443,8 @@
             const data = {
                 trans_date: document.getElementById('trans_date_out').value,
                 pallet_type_id: document.getElementById('type_out').value,
-                quantity: document.getElementById('qty_out').value
+                quantity: document.getElementById('qty_out').value,
+                shipment: document.getElementById('shipment_out').value
             };
             if (!data.trans_date || !data.pallet_type_id || !data.quantity) return alert("Thiếu thông tin!");
 
@@ -325,6 +456,7 @@
                 showToast('Đã xuất pallet!');
                 loadAllPallets();
                 document.getElementById('qty_out').value = '';
+                document.getElementById('shipment_out').value = '';
             });
         }
 
@@ -369,7 +501,7 @@
             .then(data => {
                 const filteredData = data.filter(item => {
                     if (!item.trans_date) return false;
-                    const d = item.trans_date.split('T')[0];
+                    const d = getTransDateValue(item.trans_date);
                     return d >= start && d <= end;
                 });
 
@@ -382,6 +514,10 @@
                     "Loại Pallet": item.pallet_name || 'Không xác định',
                     "Số Lượng": item.quantity
                 }));
+
+                exportData.forEach((row, index) => {
+                    row.Shipment = filteredData[index].shipment || '';
+                });
 
                 const ws = XLSX.utils.json_to_sheet(exportData);
                 const wb = XLSX.utils.book_new();
@@ -400,6 +536,9 @@
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('trans_date_in').value = today;
         document.getElementById('trans_date_out').value = today;
+        document.getElementById('filter_date').value = today;
+        document.getElementById('export_start_out').value = today;
+        document.getElementById('export_end_out').value = today;
         loadPalletTypes();
         loadAllPallets();
     </script>

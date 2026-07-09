@@ -151,6 +151,7 @@
                 <!-- Nut Import Excel -->
                 <button onclick="document.getElementById('excelBBRInput').click()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;">📥 Import Excel</button>
                 
+                <button onclick="openParentDateModal()" style="padding: 10px 15px; background: #16a085; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;" title="Sửa ngày giao hàng cho tất cả dòng cùng Parent PO">Sửa ngày giao</button>
                 <input type="text" id="searchInput" placeholder="Tìm PO, Item, Parent PO..." onkeyup="searchData()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 200px;">
                 
                 <input type="text" id="deleteParentInput" placeholder="Nhập Parent PO để xóa..." style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 160px; margin-left: 10px;">
@@ -225,6 +226,25 @@
                     <tr><td colspan="17" class="empty-row">Đang tải dữ liệu...</td></tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+
+    <!-- Modal Sửa Ngày Giao Theo Parent PO -->
+    <div id="parentDateModal" class="modal">
+        <div class="modal-content" style="width: 450px;">
+            <div class="modal-header">Sửa Ngày Giao Theo Parent PO</div>
+            <div class="form-group">
+                <label>Parent PO (*)</label>
+                <input type="text" id="editDateParentPo" placeholder="Nhập Parent PO cần sửa">
+            </div>
+            <div class="form-group">
+                <label>Ngày Giao Mới (*)</label>
+                <input type="date" id="editDeliveryDate">
+            </div>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 10px 0 0;">Hệ thống sẽ cập nhật ngày giao cho tất cả dòng BBR có cùng Parent PO này.</p>
+            <button class="btn-submit" onclick="updateDeliveryDateByParent()" style="background: #16a085;">Cập Nhật Ngày Giao</button>
+            <button class="btn-cancel" onclick="closeParentDateModal()">Đóng</button>
         </div>
     </div>
 
@@ -359,6 +379,45 @@
     <script>
         let searchTimeout;
         let currentData = [];
+
+
+        function openParentDateModal(parentpo = '') {
+            const modal = document.getElementById('parentDateModal');
+            document.getElementById('editDateParentPo').value = parentpo || document.getElementById('parentPoFilter').value || '';
+            document.getElementById('editDeliveryDate').value = '';
+            modal.style.display = 'flex';
+        }
+
+        function closeParentDateModal() {
+            document.getElementById('parentDateModal').style.display = 'none';
+        }
+
+        async function updateDeliveryDateByParent() {
+            const parentpo = document.getElementById('editDateParentPo').value.trim();
+            const deliverydate = document.getElementById('editDeliveryDate').value;
+
+            if (!parentpo || !deliverydate) {
+                showToast('Vui lòng nhập Parent PO và ngày giao mới!', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/bbr/parent-date', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parentpo, deliverydate })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Lỗi server');
+
+                showToast(result.message || 'Cập nhật ngày giao thành công!');
+                closeParentDateModal();
+                loadParentPoFilter();
+                loadData();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
 
         function showToast(msg, type='success') {
             const t = document.getElementById('toast');
@@ -516,6 +575,7 @@
                         <td><span style="padding:3px 8px; border-radius:10px; font-size:12px; background:${getStatusColor(item.status)}; color:white;">${item.status}</span></td>
                         <td>
                             <button style="padding:5px; background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer;" onclick='openModal(currentData[${index}])' title="Sửa dòng này">Sửa</button>
+                            <button style="padding:5px; background:#16a085; color:white; border:none; border-radius:3px; cursor:pointer; margin-left:5px;" onclick="openParentDateModal(currentData[${index}].parentpo || '')" title="Sửa ngày giao theo Parent PO này">Sửa ngày</button>
                             <button style="padding:5px; background:#e74c3c; color:white; border:none; border-radius:3px; cursor:pointer; margin-left:5px;" onclick="deleteBBRByParent('${item.parentpo}')" title="Xóa toàn bộ các dòng có cùng Parent PO này">Xóa Parent</button>
                             ${['receiving', 'partial'].includes((item.status || '').trim().toLowerCase()) ? `<button style="padding:5px; background:#c0392b; color:white; border:none; border-radius:3px; cursor:pointer; margin-left:5px;" onclick="deleteBBRItem(${item.id}, '${item.po} - ${item.item}')" title="Xóa dòng này">Xóa</button>` : ''}
                         </td>
@@ -1057,7 +1117,5 @@
         loadParentPoFilter();
         loadData();
     </script>
-</body>
-</html>cript>
 </body>
 </html>

@@ -45,124 +45,272 @@
         .picking-title-box { display: flex; justify-content: space-between; align-items: center; }
         .job-box { text-align: right; border: 2px solid #000; padding: 5px 15px; min-width: 150px; }
         .picking-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-        .picking-table th, .picking-table td { border: 1px solid black; padding: 8px 5px; text-align: left; }
+        .picking-table th, .picking-table td { border: 1px solid black; padding: 8px 5px; text-align: left; vertical-align: top; }
         .picking-table th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; }
+        .sku-col { width: 18%; }
+        .total-col { width: 16%; }
+        .fdc-col { text-align: right; }
+        .dimension-col { width: 20%; white-space: nowrap; }
         .total-row { font-weight: bold; background-color: #eee; }
+        .fdc-summary-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+        .fdc-summary-table th, .fdc-summary-table td { border: 1px solid black; padding: 6px 5px; }
+        .fdc-summary-table th { background-color: #f2f2f2; text-transform: uppercase; }
+        .number-cell { text-align: right; font-weight: bold; }
         .footer-note { margin-top: 30px; font-style: italic; font-size: 12px; border-top: 1px solid #ddd; padding-top: 10px; }
     </style>
 </head>
 <body>
     <div class="no-print-zone">
-        <span style="font-weight: bold; color: #9b59b6;">Xem Trước Bản In Picking List (Gom theo SKU)</span>
-        <button class="btn btn-print" onclick="window.print()">🖨️ THỰC HIỆN IN</button>
+        <span style="font-weight: bold; color: #9b59b6;">Xem trước bản in Picking List (gom theo SKU)</span>
+        <button class="btn btn-print" onclick="window.print()">THỰC HIỆN IN</button>
+        <div style="display: flex; gap: 10px; margin-left: 20px;">
+            <input type="text" id="teamLeader1" placeholder="Nhóm trưởng A" oninput="renderPickingBySku()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 120px;">
+            <input type="text" id="teamLeader2" placeholder="Nhóm trưởng B" oninput="renderPickingBySku()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 120px;">
+        </div>
         <button class="btn btn-close" onclick="window.close()">Đóng cửa sổ</button>
     </div>
 
     <div id="printContainer"></div>
 
     <script>
+        let teamLeaderA = '';
+        let teamLeaderB = '';
         const rawData = localStorage.getItem('printPickingData');
-        if (!rawData) {
-            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu!</h1></div>";
-        } else {
+        const container = document.getElementById('printContainer');
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function formatNumber(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return '0';
+            return Number.isInteger(num) ? String(num) : String(Number(num.toFixed(3)));
+        }
+
+        function getDimensionText(masterItem) {
+            if (!masterItem) return '-';
+            const length = Number(masterItem.length) || 0;
+            const width = Number(masterItem.width) || 0;
+            const height = Number(masterItem.height) || 0;
+            if (!length && !width && !height) return '-';
+            return `${formatNumber(length)}*${formatNumber(width)}*${formatNumber(height)}`;
+        }
+
+        function hasDimension(masterItem) {
+            return masterItem && getDimensionText(masterItem) !== '-';
+        }
+
+        let masterDataCache = null;
+        async function loadMasterDataMap() {
+            if (masterDataCache) return masterDataCache;
+            try {
+                const response = await fetch('/api/masterdata');
+                if (!response.ok) throw new Error('Không tải được master data');
+
+                const data = await response.json();
+                masterDataCache = data.reduce((map, item) => {
+                    const key = String(item.sku || '').trim().toLowerCase();
+                    if (!key) return map;
+                    if (!map[key] || (!hasDimension(map[key]) && hasDimension(item))) {
+                        map[key] = item;
+                    }
+                    return map;
+                }, {});
+                return masterDataCache;
+            } catch (error) {
+                console.warn(error);
+                return {};
+            }
+        }
+
+        async function renderPickingBySku() {
+            if (!rawData) {
+                container.innerHTML = "<div style='text-align:center; padding:50px;'><h1>Không tìm thấy dữ liệu!</h1></div>";
+                return;
+            }
+            
+            // Xóa nội dung cũ để render lại trang mới với tên nhóm trưởng mới
+            container.innerHTML = "";
+
+            teamLeaderA = document.getElementById('teamLeader1').value.trim();
+            teamLeaderB = document.getElementById('teamLeader2').value.trim();
+
             const jobData = JSON.parse(rawData);
-            document.title = "PickingList_SKU_Summary";
-            const container = document.getElementById('printContainer');
+            const masterDataMap = await loadMasterDataMap();
+            document.title = 'PickingList_SKU_Summary';
 
             jobData.forEach(job => {
                 if (!job.items || job.items.length === 0) return;
 
                 const rcvDate = job.items[0].datercv ? new Date(job.items[0].datercv).toLocaleDateString('vi-VN') : '-';
-
-                // --- LOGIC GROUP BY SKU + FDC ---
-                const skuFdcGroups = {};
+                
+                // 1. Gom nhóm SKU và chuẩn bị dữ liệu chi tiết
+                const skuGroupsMap = {};
                 job.items.forEach(item => {
                     const sku = item.sku || 'N/A';
                     const fdc = item.fdc || 'N/A';
-                    const key = `${sku}__${fdc}`;
-                    if (!skuFdcGroups[key]) {
-                        skuFdcGroups[key] = {
-                            sku: sku,
-                            fdc: fdc,
-                            fdcCarton: 0,
-                            fdcCbm: 0,
-                            locations: new Set(),
-                            chipboards: new Set()
+                    const skuKey = String(sku).trim().toLowerCase();
+                    const carton = parseFloat(item.carton || 0) || 0;
+                    const cbm = parseFloat(item.cbm || 0) || 0;
+
+                    if (!skuGroupsMap[skuKey]) {
+                        skuGroupsMap[skuKey] = {
+                            sku,
+                            totalCarton: 0,
+                            totalCbm: 0,
+                            fdcCartons: {},
+                            items: [], // Giữ lại items gốc để tính toán FDC Totals cho từng phần
+                            dimension: getDimensionText(masterDataMap[skuKey])
                         };
                     }
-                    skuFdcGroups[key].fdcCarton += parseFloat(item.carton || 0);
-                    skuFdcGroups[key].fdcCbm += parseFloat(item.cbm || 0);
-                    if (item.lct) skuFdcGroups[key].locations.add(item.lct);
-                    if (item.chipboard) skuFdcGroups[key].chipboards.add(item.chipboard);
+
+                    skuGroupsMap[skuKey].totalCarton += carton;
+                    skuGroupsMap[skuKey].totalCbm += cbm;
+                    skuGroupsMap[skuKey].fdcCartons[fdc] = (skuGroupsMap[skuKey].fdcCartons[fdc] || 0) + carton;
+                    skuGroupsMap[skuKey].items.push(item);
                 });
 
-                // Sắp xếp theo SKU alphabet
-                const sortedSkuFdcs = Object.values(skuFdcGroups).sort((a, b) => {
-                    const skuCompare = a.sku.localeCompare(b.sku);
-                    return skuCompare || a.fdc.localeCompare(b.fdc);
+                const sortedSkus = Object.values(skuGroupsMap).sort((a, b) => String(a.sku).localeCompare(String(b.sku)));
+                const totalJobCartons = sortedSkus.reduce((sum, s) => sum + s.totalCarton, 0);
+
+                // 2. Chia đôi danh sách SKU dựa trên tổng số carton / 2
+                let currentSum = 0;
+                let part1Skus = [];
+                let part2Skus = [];
+                let splitReached = false;
+
+                sortedSkus.forEach(s => {
+                    if (!splitReached) {
+                        part1Skus.push(s);
+                        currentSum += s.totalCarton;
+                        if (currentSum >= totalJobCartons / 2) splitReached = true;
+                    } else {
+                        part2Skus.push(s);
+                    }
                 });
 
-                let tableRows = '';
-                let grandCarton = 0;
-                let grandCbm = 0;
+                const parts = [
+                    { label: "PHẦN 1 (Group A)", skus: part1Skus, teamLeader: teamLeaderA },
+                    { label: "PHẦN 2 (Group B)", skus: part2Skus, teamLeader: teamLeaderB }
+                ].filter(p => p.skus.length > 0); // Chỉ hiện phần có dữ liệu
 
-                sortedSkuFdcs.forEach(group => {
-                    grandCarton += group.fdcCarton;
-                    grandCbm += group.fdcCbm;
-                    tableRows += `
+                const fdcColumns = [...new Set(job.items.map(item => item.fdc || 'N/A'))].sort();
+
+                // 3. Render từng phần thành các trang riêng biệt
+                parts.forEach(part => {
+                    let partCarton = 0;
+                    let partCbm = 0;
+                    const partFdcTotals = {};
+
+                    const tableRows = part.skus.map(group => {
+                        partCarton += group.totalCarton;
+                    const fdcCells = fdcColumns.map(fdc => {
+                        const carton = group.fdcCartons[fdc] || '';
+                        return `<td class="fdc-col">${carton === '' ? '' : formatNumber(carton)}</td>`;
+                    }).join('');
+
+                    return `
                         <tr>
-                            <td><b style="font-size:15px;">${group.sku}</b></td>
-                            <td style="text-align:center; font-weight:bold;">${group.fdc}</td>
-                            <td style="text-align:center; font-weight:bold; font-size:16px;">${group.fdcCarton}</td>
-                            <td>${group.fdcCbm.toFixed(3)}</td>
-                            <td>${Array.from(group.locations).join(', ') || '-'}</td>
-                            <td style="text-align:center;">${Array.from(group.chipboards).join(', ') || '-'}</td>
+                            <td class="sku-col"><b style="font-size:15px;">${escapeHtml(group.sku)}</b></td>
+                            <td class="total-col" style="text-align:right; font-weight:bold; font-size:16px;">${formatNumber(group.totalCarton)}</td>
+                            ${fdcCells}
+                            <td class="dimension-col">${escapeHtml(group.dimension)}</td>
                         </tr>`;
-                });
+                }).join('');
+
+                    const fdcHeaders = fdcColumns.map(fdc => `<th class="fdc-col">${escapeHtml(fdc)}</th>`).join('');
+
+                    // Tính lại bảng tổng hợp FDC chỉ cho phần này
+                    part.skus.forEach(group => {
+                        group.items.forEach(item => {
+                            const fdc = item.fdc || 'N/A';
+                            if (!partFdcTotals[fdc]) partFdcTotals[fdc] = { carton: 0, cbm: 0 };
+                            partFdcTotals[fdc].carton += (parseFloat(item.carton) || 0);
+                            partFdcTotals[fdc].cbm += (parseFloat(item.cbm) || 0);
+                        });
+                    });
+
+                    const fdcSummaryRows = fdcColumns.map(fdc => {
+                        const totals = partFdcTotals[fdc] || { carton: 0, cbm: 0 };
+                        partCbm += totals.cbm;
+                        if (totals.carton === 0) return ''; // Không hiện FDC không có hàng trong phần này
+                    return `
+                        <tr>
+                            <td>${escapeHtml(fdc)}</td>
+                            <td class="number-cell">${formatNumber(totals.carton)}</td>
+                            <td class="number-cell">${totals.cbm.toFixed(3)}</td>
+                        </tr>`;
+                    }).join('');
 
                 container.innerHTML += `
                     <div class="picking-page">
                         <div class="picking-header">
                             <div class="picking-title-box">
-                                <h1 style="margin:0;">PICKING LIST (BY SKU)</h1>
+                                <h1 style="margin:0;">PICKING LIST (BY SKU) - <span style="color:#e67e22;">${part.label}</span></h1>
                                 <div class="job-box">
+                                    ${part.teamLeader ? `<div style="font-size: 10px;">NHÓM TRƯỞNG</div><div style="font-size: 18px; font-weight: bold; color: #3498db;">${escapeHtml(part.teamLeader)}</div>` : ''}
                                     <div style="font-size: 10px;">JOB NUMBER</div>
-                                    <div style="font-size: 22px; font-weight: bold;">${job.jobNo}</div>
+                                    <div style="font-size: 22px; font-weight: bold;">${escapeHtml(job.jobNo)}</div>
                                 </div>
                             </div>
                             <div style="display:flex; justify-content:space-between; margin-top:15px; font-size: 13px;">
-                                <span><b>Ngày nhận:</b> ${rcvDate}</span>
+                                <span><b>Ngày nhận:</b> ${escapeHtml(rcvDate)}</span>
                                 <span><b>Ngày in:</b> ${new Date().toLocaleDateString('vi-VN')}</span>
                             </div>
                         </div>
                         <table class="picking-table">
                             <thead>
                                 <tr>
-                                    <th style="width:24%">Mã SKU</th>
-                                    <th style="width:12%; text-align:center;">FDC</th>
-                                    <th style="width:12%; text-align:center;">Carton FDC</th>
-                                    <th style="width:10%">Tổng CBM</th>
-                                    <th style="width:30%">Vị trí (LCT)</th>
-                                    <th style="width:12%; text-align:center;">Chip</th>
+                                    <th class="sku-col">SKU</th>
+                                    <th class="total-col" style="text-align:right;">Tổng carton</th>
+                                    ${fdcHeaders}
+                                    <th class="dimension-col">Kích thước</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${tableRows}
                                 <tr class="total-row">
-                                    <td style="text-align:right">TỔNG CỘNG JOB:</td>
-                                    <td></td>
-                                    <td style="text-align:center; font-size:16px;">${grandCarton}</td>
-                                    <td colspan="3">CBM: ${grandCbm.toFixed(3)}</td>
+                                    <td style="text-align:right">TỔNG CỘNG PHẦN:</td>
+                                    <td style="text-align:center; font-size:16px;">${formatNumber(partCarton)}</td>
+                                    <td colspan="${fdcColumns.length + 1}">Tổng SKU: ${part.skus.length} / ${sortedSkus.length}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <table class="fdc-summary-table">
+                            <thead>
+                                <tr>
+                                    <th>FDC</th>
+                                    <th style="text-align:right;">Tổng carton</th>
+                                    <th style="text-align:right;">Tổng CBM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${fdcSummaryRows}
+                                <tr class="total-row">
+                                    <td style="text-align:right;">TỔNG PHẦN:</td>
+                                    <td class="number-cell">${formatNumber(partCarton)}</td>
+                                    <td class="number-cell">${partCbm.toFixed(3)}</td>
                                 </tr>
                             </tbody>
                         </table>
                         <div class="footer-note">
-                            * Ghi chú: Bảng kê này đã gom nhóm số lượng theo SKU để thuận tiện cho việc soạn hàng tại vị trí.<br>
+                            * Ghi chú: Danh sách này đã được chia đôi (Phần 1/2) để hỗ trợ 2 nhóm soạn hàng song song.<br>
+                            Mỗi FDC là một cột riêng và kích thước lấy từ master data.<br>
                             Nhân viên kiểm tra kỹ mã hàng và số lượng trước khi đóng container.
                         </div>
                     </div>`;
+                });
             });
         }
+
+        renderPickingBySku();
     </script>
 </body>
 </html>

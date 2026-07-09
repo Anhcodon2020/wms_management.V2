@@ -75,6 +75,13 @@ connection.connect((err) => {
       }
     });
 
+    connection.query("SHOW COLUMNS FROM pallet_out LIKE 'shipment'", (err, results) => {
+      if (!err && results.length === 0) {
+        console.log("Phat hien thieu cot 'shipment' trong pallet_out. Dang tu dong them...");
+        connection.query("ALTER TABLE pallet_out ADD COLUMN shipment VARCHAR(255) DEFAULT NULL AFTER quantity");
+      }
+    });
+
     // Tự động kiểm tra và thêm cột is_exported vào bảng bbrreport
     connection.query("SHOW COLUMNS FROM bbrreport LIKE 'is_exported'", (err, results) => {
       if (!err && results.length === 0) {
@@ -163,6 +170,21 @@ connection.connect((err) => {
           }
         });
       }
+    });
+
+    // Tự động tạo bảng inventory_whs nếu chưa có để lưu vị trí tồn kho
+    const createInventoryTable = `
+      CREATE TABLE IF NOT EXISTS inventory_whs (
+        id INT NOT NULL AUTO_INCREMENT,
+        sku VARCHAR(50) DEFAULT NULL,
+        loc_id VARCHAR(50) DEFAULT NULL,
+        qty INT DEFAULT 0,
+        PRIMARY KEY (id),
+        INDEX (sku)
+      )`;
+    connection.query(createInventoryTable, (err) => {
+      if (err) console.error("❌ [LOI] Không thể khởi tạo bảng inventory_whs:", err.message);
+      else console.log("✅ [THANH CONG] Đảm bảo bảng inventory_whs đã tồn tại!");
     });
   }
 });
@@ -383,6 +405,13 @@ app.get(['/follow', '/follow.html'], (req, res) => {
 });
 
 // --- ROUTE MOI: Trang In Nhãn Pallet ---
+app.get(['/carton-backup', '/Carton_backup.html'], (req, res) => {
+  fs.readFile(__dirname + '/Carton_backup.html', 'utf8', (err, data) => {
+    if (err) return res.status(404).send('<h1>Không tìm thấy Carton_backup.html</h1>');
+    res.send(data);
+  });
+});
+
 app.get(['/printPalletLabel', '/printPalletLabel.html'], (req, res) => {
   fs.readFile(__dirname + '/printPalletLabel.html', 'utf8', (err, data) => {
     if (err) {
@@ -668,8 +697,8 @@ app.post('/api/bbr/import', async (req, res) => {
                     
                     // Xu ly Ngay Giao (Delivery Date)
                     let deliveryDate = row['DELIVERY DT'] ? new Date(row['DELIVERY DT']) : new Date();
-                    // Logic cong ngay: VN +3, Khac +14
-                    const daysToAdd = (origin.toUpperCase() === 'VN') ? 3 : 14;
+                    // Logic cong ngay: VN giu nguyen DELIVERY DT, khac VN +14 ngay
+                    const daysToAdd = (String(origin).trim().toUpperCase() === 'VN') ? 0 : 14;
                     deliveryDate.setDate(deliveryDate.getDate() + daysToAdd);
 
                     const sql = `INSERT INTO bbrreport (po, item, parentpo, origin, supplier, qty, cbm, deliverydate, hub_DC, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'New')`;
@@ -709,6 +738,23 @@ app.put('/api/bbr/exported', (req, res) => {
     connection.query(sql, [is_exported ? 1 : 0, id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: 'OK' });
+    });
+});
+
+// Cap nhat ngay giao hang cho tat ca dong BBR theo Parent PO
+app.put('/api/bbr/parent-date', (req, res) => {
+    const { parentpo, deliverydate } = req.body;
+    if (!parentpo || !deliverydate) {
+        return res.status(400).json({ error: 'Thiếu Parent PO hoặc ngày giao hàng' });
+    }
+
+    const sql = 'UPDATE bbrreport SET deliverydate = ? WHERE parentpo = ?';
+    connection.query(sql, [deliverydate, parentpo], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({
+            message: `Đã cập nhật ngày giao hàng cho ${result.affectedRows} dòng của Parent PO: ${parentpo}`,
+            updated: result.affectedRows
+        });
     });
 });
 
@@ -892,9 +938,38 @@ app.get('/api/inbound/dropdown/items', (req, res) => {
 // --- API: Quan ly Xuat Kho (Outbound) ---
 
 // 1. Lay danh sach Outbound
-app.get('/api/outbound', (req, res) => {
+app.get('/api/outbound', async (req, res) => {
     const { q, start, end, noCont } = req.query;
-    let sql = 'SELECT o.*, m.chipboard, m.cartonperpallet, m.kindpallet AS mapped_kindpallet FROM outbound o LEFT JOIN masterdata m ON o.sku = m.sku';
+    let hasInventoryWhs = false;
+    try {
+        const [tables] = await connection.promise().query(
+            "SELECT COUNT(*) AS count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND LOWER(TABLE_NAME) = 'inventory_whs'"
+        );
+        hasInventoryWhs = tables[0] && tables[0].count > 0;
+    } catch (err) {
+        console.warn('Khong kiem tra duoc bang inventory_whs:', err.message);
+    }
+
+    const inventorySelect = hasInventoryWhs
+        ? ", inv.inventory_loc_ids"
+        : ", NULL AS inventory_loc_ids";
+    const inventoryJoin = hasInventoryWhs
+        ? `
+        LEFT JOIN (
+            SELECT
+                LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', '')) AS sku_key,
+                GROUP_CONCAT(DISTINCT TRIM(loc_id) ORDER BY TRIM(loc_id) ASC SEPARATOR ', ') AS inventory_loc_ids
+            FROM inventory_whs
+            WHERE sku IS NOT NULL AND TRIM(CAST(sku AS CHAR)) <> ''
+            GROUP BY LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', ''))
+        ) inv ON LOWER(REPLACE(TRIM(CAST(o.sku AS CHAR)), ' ', '')) = inv.sku_key`
+        : '';
+
+    let sql = `
+        SELECT o.*, m.chipboard, m.cartonperpallet, m.kindpallet AS mapped_kindpallet${inventorySelect}
+        FROM outbound o 
+        LEFT JOIN masterdata m ON o.sku = m.sku
+        ${inventoryJoin}`;
     let params = [];
     let conditions = [];
 
@@ -922,6 +997,48 @@ app.get('/api/outbound', (req, res) => {
         }
         res.json(results);
     });
+});
+
+app.post('/api/inventory-whs/loc-ids', async (req, res) => {
+    const skus = Array.isArray(req.body.skus) ? req.body.skus : [];
+    const normalizeValue = value => String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+    const skuKeys = [...new Set(skus.map(normalizeValue).filter(Boolean))];
+
+    if (skuKeys.length === 0) return res.json({});
+
+    try {
+        const [tables] = await connection.promise().query(
+            "SELECT COUNT(*) AS count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND LOWER(TABLE_NAME) = 'inventory_whs'"
+        );
+        if (!tables[0] || tables[0].count === 0) return res.json({});
+
+        const normalizeSql = "LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', ''))";
+        const placeholders = skuKeys.map(() => '?').join(',');
+        const [rows] = await connection.promise().query(
+            `SELECT
+                ${normalizeSql} AS sku_key,
+                GROUP_CONCAT(DISTINCT TRIM(loc_id) ORDER BY TRIM(loc_id) ASC SEPARATOR ', ') AS loc_ids
+             FROM inventory_whs
+             WHERE sku IS NOT NULL
+               AND TRIM(CAST(sku AS CHAR)) <> ''
+               AND loc_id IS NOT NULL
+               AND TRIM(CAST(loc_id AS CHAR)) <> ''
+               AND ${normalizeSql} IN (${placeholders})
+             GROUP BY ${normalizeSql}`,
+            skuKeys
+        );
+
+        const locMap = rows.reduce((map, row) => {
+            if (row.sku_key && row.loc_ids) map[row.sku_key] = row.loc_ids;
+            return map;
+        }, {});
+
+        console.log(`[inventory_whs loc] requested=${skuKeys.length}, matched=${Object.keys(locMap).length}`);
+        res.json(locMap);
+    } catch (err) {
+        console.error('[API ERROR] POST /api/inventory-whs/loc-ids:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // 2. Them moi Outbound
@@ -1183,27 +1300,37 @@ app.get('/api/outbound/dropdown/jobs-no-cont', (req, res) => {
 });
 
 // --- API: Lay chi tiet SKU va kich thuoc tu Master Data theo Job No (Outbound) ---
-app.get('/api/outbound/skus-details/:jobno', (req, res) => {
+app.get('/api/outbound/skus-details/:jobno', async (req, res) => {
     const jobno = req.params.jobno;
-    const sql = `
-        SELECT o.sku, o.carton as qty, o.fdc, m.length, m.width, m.height, m.weight 
-        FROM outbound o 
-        LEFT JOIN masterdata m ON o.sku = m.sku 
-        WHERE o.jobno = ?
-          AND TRIM(COALESCE(o.sku, '')) <> '0'`;
-    connection.query(sql, [jobno], (err, results) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(results);
-    });
-});
+    let hasInventoryWhs = false;
+    try {
+        const [tables] = await connection.promise().query(
+            "SELECT COUNT(*) AS count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND LOWER(TABLE_NAME) = 'inventory_whs'"
+        );
+        hasInventoryWhs = tables[0] && tables[0].count > 0;
+    } catch (err) {
+        console.warn('Khong kiem tra duoc bang inventory_whs:', err.message);
+    }
 
-// --- API: Lay chi tiet SKU va kich thuoc tu Master Data theo Job No (Outbound) ---
-app.get('/api/outbound/skus-details/:jobno', (req, res) => {
-    const jobno = req.params.jobno;
+    const inventorySelect = hasInventoryWhs ? ', inv.inventory_loc_ids' : ', NULL AS inventory_loc_ids';
+    const inventoryJoin = hasInventoryWhs ? `
+        LEFT JOIN (
+            SELECT
+                LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', '')) AS sku_key,
+                GROUP_CONCAT(DISTINCT TRIM(loc_id) ORDER BY TRIM(loc_id) ASC SEPARATOR ', ') AS inventory_loc_ids
+            FROM inventory_whs
+            WHERE sku IS NOT NULL AND TRIM(CAST(sku AS CHAR)) <> ''
+            GROUP BY LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', ''))
+        ) inv ON LOWER(REPLACE(TRIM(CAST(o.sku AS CHAR)), ' ', '')) = inv.sku_key
+    ` : '';
+
     const sql = `
-        SELECT o.sku, o.carton as qty, o.fdc, m.length, m.width, m.height, m.weight 
+        SELECT o.sku, o.carton as qty, o.fdc, o.cbm AS outbound_cbm, o.lct,
+               m.length, m.width, m.height, m.weight, m.cbm AS master_cbm
+               ${inventorySelect}
         FROM outbound o 
         LEFT JOIN masterdata m ON o.sku = m.sku 
+        ${inventoryJoin}
         WHERE o.jobno = ?
           AND TRIM(COALESCE(o.sku, '')) <> '0'`;
     connection.query(sql, [jobno], (err, results) => {
@@ -1499,7 +1626,28 @@ app.get('/api/dashboard/stats', (req, res) => {
             (SELECT IFNULL(SUM(b.qty * m.cbm), 0) FROM bbrreport b JOIN masterdata m ON b.item = m.sku WHERE YEARWEEK(b.deliverydate, 1) = YEARWEEK(CURDATE(), 1)) as forecast_this_week_cbm,
             (SELECT IFNULL(SUM(qty), 0) FROM bbrreport WHERE YEARWEEK(deliverydate, 1) = YEARWEEK(DATE_ADD(CURDATE(), INTERVAL 1 WEEK), 1)) as forecast_next_week,
             (SELECT IFNULL(SUM(b.qty * m.cbm), 0) FROM bbrreport b JOIN masterdata m ON b.item = m.sku WHERE YEARWEEK(b.deliverydate, 1) = YEARWEEK(DATE_ADD(CURDATE(), INTERVAL 1 WEEK), 1)) as forecast_next_week_cbm,
-            (SELECT IFNULL(SUM(cbm), 0) FROM outbound WHERE container IS NULL OR TRIM(container) = '') as outbound_no_cont_cbm
+            (SELECT IFNULL(SUM(cbm), 0) FROM outbound WHERE container IS NULL OR TRIM(container) = '') as outbound_no_cont_cbm,
+            (
+                SELECT IFNULL(SUM(o.cbm), 0)
+                FROM outbound o
+                INNER JOIN (
+                    SELECT
+                        LOWER(TRIM(CAST(po AS CHAR))) as parentpo_key,
+                        LOWER(TRIM(CAST(sku AS CHAR))) as sku_key,
+                        MAX(DATE(datercv)) as inbound_date
+                    FROM inbound
+                    WHERE po IS NOT NULL AND TRIM(CAST(po AS CHAR)) <> ''
+                      AND sku IS NOT NULL AND TRIM(CAST(sku AS CHAR)) <> ''
+                      AND datercv IS NOT NULL
+                    GROUP BY
+                        LOWER(TRIM(CAST(po AS CHAR))),
+                        LOWER(TRIM(CAST(sku AS CHAR)))
+                ) i
+                    ON LOWER(TRIM(CAST(o.parentpo AS CHAR))) = i.parentpo_key
+                   AND LOWER(TRIM(CAST(o.sku AS CHAR))) = i.sku_key
+                WHERE (o.container IS NULL OR TRIM(o.container) = '')
+                  AND DATEDIFF(CURDATE(), i.inbound_date) > 14
+            ) as backlog_cbm
     `;
     connection.query(sql, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -1653,9 +1801,9 @@ app.get('/api/pallets/out', (req, res) => {
 
 // 2. Thêm mới bản ghi xuất pallet
 app.post('/api/pallets/out', (req, res) => {
-    const { trans_date, pallet_type_id, quantity } = req.body;
-    const sql = 'INSERT INTO pallet_out (trans_date, pallet_type_id, quantity) VALUES (?, ?, ?)';
-    connection.query(sql, [trans_date, pallet_type_id, quantity], (err, result) => {
+    const { trans_date, pallet_type_id, quantity, shipment } = req.body;
+    const sql = 'INSERT INTO pallet_out (trans_date, pallet_type_id, quantity, shipment) VALUES (?, ?, ?, ?)';
+    connection.query(sql, [trans_date, pallet_type_id, quantity, shipment], (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: 'Xuất pallet thành công!', id: result.insertId });
     });
@@ -1776,6 +1924,94 @@ app.delete('/api/follow/:id', (req, res) => {
     connection.query('DELETE FROM follow WHERE id = ?', [req.params.id], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ message: 'Đã xóa thành công!' });
+    });
+});
+
+// --- API: Quan ly Empty Carton ---
+app.get('/api/empty-carton', (req, res) => {
+    const q = String(req.query.q || '').trim();
+    let sql = `SELECT id, sku, qty_inventory, qty_use,
+                      COALESCE(qty_inventory, 0) - COALESCE(qty_use, 0) AS qty_remaining
+               FROM Empty_Carton`;
+    const params = [];
+    if (q) {
+        sql += ' WHERE sku LIKE ?';
+        params.push(`%${q}%`);
+    }
+    sql += ' ORDER BY sku ASC, id DESC';
+    connection.query(sql, params, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.post('/api/empty-carton', (req, res) => {
+    const sku = String(req.body.sku || '').trim();
+    const qtyInventory = Number(req.body.qty_inventory);
+    const qtyUse = Number(req.body.qty_use);
+    if (!sku) return res.status(400).json({ error: 'Vui lòng nhập SKU' });
+    if (!Number.isInteger(qtyInventory) || qtyInventory < 0 || !Number.isInteger(qtyUse) || qtyUse < 0) {
+        return res.status(400).json({ error: 'Số lượng phải là số nguyên không âm' });
+    }
+    connection.query(
+        'SELECT id FROM Empty_Carton WHERE LOWER(TRIM(sku)) = LOWER(?) ORDER BY id ASC LIMIT 1',
+        [sku],
+        (findError, rows) => {
+            if (findError) return res.status(500).json({ error: findError.message });
+
+            if (rows.length > 0) {
+                connection.query(
+                    `UPDATE Empty_Carton
+                     SET qty_inventory = COALESCE(qty_inventory, 0) + ?,
+                         qty_use = COALESCE(qty_use, 0) + ?
+                     WHERE id = ?`,
+                    [qtyInventory, qtyUse, rows[0].id],
+                    (updateError) => {
+                        if (updateError) return res.status(500).json({ error: updateError.message });
+                        res.json({
+                            message: 'SKU đã tồn tại, số lượng đã được cộng dồn',
+                            id: rows[0].id,
+                            accumulated: true
+                        });
+                    }
+                );
+                return;
+            }
+
+            connection.query(
+                'INSERT INTO Empty_Carton (sku, qty_inventory, qty_use) VALUES (?, ?, ?)',
+                [sku, qtyInventory, qtyUse],
+                (insertError, result) => {
+                    if (insertError) return res.status(500).json({ error: insertError.message });
+                    res.status(201).json({ message: 'Đã thêm carton dự phòng', id: result.insertId });
+                }
+            );
+        }
+    );
+});
+
+app.put('/api/empty-carton/:id', (req, res) => {
+    const id = Number(req.params.id);
+    const sku = String(req.body.sku || '').trim();
+    const qtyInventory = Number(req.body.qty_inventory);
+    const qtyUse = Number(req.body.qty_use);
+    if (!Number.isInteger(id) || id <= 0 || !sku) return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+    if (!Number.isInteger(qtyInventory) || qtyInventory < 0 || !Number.isInteger(qtyUse) || qtyUse < 0) {
+        return res.status(400).json({ error: 'Số lượng phải là số nguyên không âm' });
+    }
+    connection.query('UPDATE Empty_Carton SET sku = ?, qty_inventory = ?, qty_use = ? WHERE id = ?',
+        [sku, qtyInventory, qtyUse, id], (err, result) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (!result.affectedRows) return res.status(404).json({ error: 'Không tìm thấy bản ghi' });
+            res.json({ message: 'Đã cập nhật carton dự phòng' });
+        });
+});
+
+app.delete('/api/empty-carton/:id', (req, res) => {
+    connection.query('DELETE FROM Empty_Carton WHERE id = ?', [req.params.id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!result.affectedRows) return res.status(404).json({ error: 'Không tìm thấy bản ghi' });
+        res.json({ message: 'Đã xóa carton dự phòng' });
     });
 });
 

@@ -215,6 +215,7 @@
                 <button onclick="downloadTemplate()" style="padding: 10px 15px; background: #95a5a6; color: white; border: none; border-radius: 5px; cursor: pointer;" title="Tải file mẫu nhập liệu">⬇️ Tải Mẫu</button>
                 <button onclick="openImportModal()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer;">📥 Import</button>
                 <button onclick="exportExcel()" style="padding: 10px 15px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer;">📤 Excel</button>
+                <button onclick="exportContainerCount()" style="padding: 10px 15px; background: #1abc9c; color: white; border: none; border-radius: 5px; cursor: pointer;" title="Xuất số lượng container đóng theo khoảng ngày Stuffing">Excel SL Cont</button>
                 <button onclick="printCLP()" style="padding: 10px 15px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">📋 In CLP</button>
                 <button onclick="printPickingSKU()" style="padding: 10px 15px; background: #9b59b6; color: white; border: none; border-radius: 5px; cursor: pointer;" title="In danh sách soạn hàng gom theo SKU">🖨️ In Picking SKU</button>
                 <button onclick="printPickingList()" style="padding: 10px 15px; background: #8e44ad; color: white; border: none; border-radius: 5px; cursor: pointer;">🖨️ In Picking List</button>
@@ -496,6 +497,8 @@
 
                 const dStuff = item.datestuff ? new Date(item.datestuff).toLocaleDateString('vi-VN') : '-';
                 const parentInfo = item.parentpo ? `<br><span style="font-size:11px; color:#666;">P: ${item.parentpo}</span>` : '';
+                const displayLoc = item.inventory_loc_ids || item.inventory_loc_id || '';
+                const locInfo = displayLoc ? `<br><span style="font-size:11px; color:#27ae60;">LOC: ${displayLoc}</span>` : '';
                 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -503,7 +506,7 @@
                     <td>${item.rsl}</td>
                     <td>${item.fdc}</td>
                     <td>${item.childpo} ${parentInfo}</td>
-                    <td>${item.sku}</td>
+                    <td>${item.sku}${locInfo}</td>
                     <td style="font-weight:bold;">${item.carton}</td>
                     <td>${item.cbm || '-'}</td>
                     <td style="font-size:11px;">${item.kindpallet || ''} ${item.mapped_kindpallet ? `<br><span class="badge bg-blue" style="font-size:9px;">MD: ${item.mapped_kindpallet}</span>` : ''}</td>
@@ -683,7 +686,35 @@
             return s;
         }
 
-        function printPickingList() {
+        function normalizeSkuForLoc(value) {
+            return String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+        }
+
+        async function enrichInventoryLocIds(dataToPrint) {
+            const skus = [...new Set(dataToPrint.flatMap(job => job.items.map(item => item.sku)).filter(Boolean))];
+            if (skus.length === 0) return;
+
+            try {
+                const response = await fetch('/api/inventory-whs/loc-ids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skus })
+                });
+                if (!response.ok) throw new Error('Khong tai duoc loc_id tu inventory_whs');
+
+                const locMap = await response.json();
+                dataToPrint.forEach(job => {
+                    job.items.forEach(item => {
+                        const locIds = locMap[normalizeSkuForLoc(item.sku)];
+                        if (locIds) item.inventory_loc_ids = locIds;
+                    });
+                });
+            } catch (error) {
+                console.warn(error);
+            }
+        }
+
+        async function printPickingList() {
             const selectedJobs = Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
             if (selectedJobs.length === 0) {
                 showToast('Vui lòng chọn ít nhất 1 Job để in!', 'error');
@@ -698,6 +729,7 @@
                 };
             });
 
+            await enrichInventoryLocIds(dataToPrint);
             localStorage.setItem('printPickingData', JSON.stringify(dataToPrint));
             
             // Mở trang in trong cửa sổ mới
@@ -1035,7 +1067,201 @@
             XLSX.writeFile(wb, `托盘明细_${yyyymmdd}_${containerNo}.xlsx`);
         }
 
+        async function exportContainerCount() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+
+            if (!start || !end) {
+                showToast('Vui lòng chọn Từ ngày và Đến ngày Stuffing trước khi export số lượng container!', 'error');
+                return;
+            }
+
+            if (start > end) {
+                showToast('Từ ngày không được lớn hơn Đến ngày!', 'error');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({ start, end });
+                const response = await fetch(`/api/outbound?${params.toString()}`);
+                if (!response.ok) throw new Error('Không tải được dữ liệu outbound');
+
+                const rows = await response.json();
+                const containersByKey = {};
+
+                rows.forEach(item => {
+                    const container = String(item.container || '').trim().toUpperCase();
+                    const dateStuffing = item.datestuff ? String(item.datestuff).split('T')[0] : '';
+                    if (!container || !dateStuffing) return;
+
+                    const key = `${dateStuffing}|${container}`;
+                    if (!containersByKey[key]) {
+                        containersByKey[key] = {
+                            dateStuffing,
+                            container,
+                            sealSet: new Set(),
+                            jobSet: new Set(),
+                            carton: 0,
+                            cbm: 0
+                        };
+                    }
+
+                    if (item.seal) containersByKey[key].sealSet.add(String(item.seal).trim());
+                    if (item.jobno) containersByKey[key].jobSet.add(String(item.jobno).trim());
+                    containersByKey[key].carton += Number(item.carton) || 0;
+                    containersByKey[key].cbm += Number(item.cbm) || 0;
+                });
+
+                const detailRows = Object.values(containersByKey)
+                    .sort((a, b) => a.dateStuffing.localeCompare(b.dateStuffing) || a.container.localeCompare(b.container))
+                    .map(item => ({
+                        "Date Stuffing": item.dateStuffing,
+                        "Container": item.container,
+                        "Seal": Array.from(item.sealSet).join(', '),
+                        "Job No": Array.from(item.jobSet).join(', '),
+                        "Tổng Carton": item.carton,
+                        "Tổng CBM": Number(item.cbm.toFixed(3))
+                    }));
+
+                if (detailRows.length === 0) {
+                    showToast('Không có container đã đóng trong khoảng ngày đã chọn!', 'error');
+                    return;
+                }
+
+                const summaryMap = {};
+                detailRows.forEach(row => {
+                    const dateStuffing = row["Date Stuffing"];
+                    if (!summaryMap[dateStuffing]) summaryMap[dateStuffing] = { dateStuffing, totalCont: 0, carton: 0, cbm: 0, containers: [] };
+                    summaryMap[dateStuffing].totalCont += 1;
+                    summaryMap[dateStuffing].carton += Number(row["Tổng Carton"]) || 0;
+                    summaryMap[dateStuffing].cbm += Number(row["Tổng CBM"]) || 0;
+                    summaryMap[dateStuffing].containers.push(row["Container"]);
+                });
+
+                const summaryRows = Object.values(summaryMap)
+                    .sort((a, b) => a.dateStuffing.localeCompare(b.dateStuffing))
+                    .map(item => ({
+                        "Date Stuffing": item.dateStuffing,
+                        "Số Lượng Container": item.totalCont,
+                        "Tổng Carton": item.carton,
+                        "Tổng CBM": Number(item.cbm.toFixed(3)),
+                        "Danh Sách Container": item.containers.join(', ')
+                    }));
+
+                const totalRows = [{
+                    "Từ Ngày": start,
+                    "Đến Ngày": end,
+                    "Tổng Số Container": detailRows.length,
+                    "Tổng Carton": detailRows.reduce((sum, row) => sum + (Number(row["Tổng Carton"]) || 0), 0),
+                    "Tổng CBM": Number(detailRows.reduce((sum, row) => sum + (Number(row["Tổng CBM"]) || 0), 0).toFixed(3))
+                }];
+
+                const wb = XLSX.utils.book_new();
+                const totalWs = XLSX.utils.json_to_sheet(totalRows);
+                const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
+                const detailWs = XLSX.utils.json_to_sheet(detailRows);
+
+                totalWs['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
+                summaryWs['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 60 }];
+                detailWs['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 30 }, { wch: 14 }, { wch: 12 }];
+
+                XLSX.utils.book_append_sheet(wb, totalWs, "TongHop");
+                XLSX.utils.book_append_sheet(wb, summaryWs, "TheoNgay");
+                XLSX.utils.book_append_sheet(wb, detailWs, "ChiTietCont");
+                XLSX.writeFile(wb, `SoLuongContainer_${start}_${end}.xlsx`);
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || 'Lỗi export số lượng container', 'error');
+            }
+        }
+
         // Tải danh sách Job chưa có Cont vào Dropdown
+        function addExportChipboardButton() {
+            const excelBtn = document.querySelector('button[onclick="exportExcel()"]');
+            if (!excelBtn || document.getElementById('exportChipboardBtn')) return;
+
+            const btn = document.createElement('button');
+            btn.id = 'exportChipboardBtn';
+            btn.type = 'button';
+            btn.textContent = 'Export Chipboard';
+            btn.title = 'Xuất chipboard theo khoảng ngày Stuffing';
+            btn.onclick = exportChipboard;
+            btn.style.cssText = 'padding: 10px 15px; background: #16a085; color: white; border: none; border-radius: 5px; cursor: pointer;';
+            excelBtn.insertAdjacentElement('afterend', btn);
+        }
+
+        async function exportChipboard() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+
+            if (!start || !end) {
+                showToast('Vui lòng chọn Từ ngày và Đến ngày Stuffing trước khi export chipboard!', 'error');
+                return;
+            }
+
+            if (start > end) {
+                showToast('Từ ngày không được lớn hơn Đến ngày!', 'error');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({ start, end });
+                const response = await fetch(`/api/outbound?${params.toString()}`);
+                if (!response.ok) throw new Error('Không tải được dữ liệu outbound');
+
+                const rows = await response.json();
+                const exportRows = rows
+                    .filter(item => String(item.sku || '').trim() && String(item.sku || '').trim() !== '0')
+                    .map(item => ({
+                        "Date Stuffing": item.datestuff ? item.datestuff.split('T')[0] : '',
+                        "Job No": item.jobno || '',
+                        "Container": item.container || '',
+                        "Seal": item.seal || '',
+                        "FDC": item.fdc || '',
+                        "SKU": item.sku || '',
+                        "Carton": Number(item.carton) || 0,
+                        "CBM": Number(item.cbm) || 0,
+                        "Chipboard": item.chipboard || '',
+                        "Remark": item.remark || ''
+                    }));
+
+                if (exportRows.length === 0) {
+                    showToast('Không có dữ liệu chipboard trong khoảng ngày đã chọn!', 'error');
+                    return;
+                }
+
+                const summaryMap = {};
+                exportRows.forEach(row => {
+                    const chipboard = row["Chipboard"] || 'Chưa mapping';
+                    if (!summaryMap[chipboard]) {
+                        summaryMap[chipboard] = { chipboard, carton: 0, cbm: 0, skuSet: new Set(), jobSet: new Set() };
+                    }
+                    summaryMap[chipboard].carton += Number(row["Carton"]) || 0;
+                    summaryMap[chipboard].cbm += Number(row["CBM"]) || 0;
+                    if (row["SKU"]) summaryMap[chipboard].skuSet.add(row["SKU"]);
+                    if (row["Job No"]) summaryMap[chipboard].jobSet.add(row["Job No"]);
+                });
+
+                const summaryRows = Object.values(summaryMap)
+                    .sort((a, b) => String(a.chipboard).localeCompare(String(b.chipboard)))
+                    .map(item => ({
+                        "Chipboard": item.chipboard,
+                        "Tổng Carton": item.carton,
+                        "Tổng CBM": Number(item.cbm.toFixed(3)),
+                        "Số SKU": item.skuSet.size,
+                        "Số Job": item.jobSet.size
+                    }));
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "TongHop_Chipboard");
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows), "ChiTiet_Chipboard");
+                XLSX.writeFile(wb, `Chipboard_${start}_${end}.xlsx`);
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || 'Lỗi export chipboard', 'error');
+            }
+        }
+
         function loadNoContJobs() {
             fetch('/api/outbound/dropdown/jobs-no-cont')
             .then(r => r.json())
@@ -1067,6 +1293,7 @@
         }
 
         // Load lan dau
+        addExportChipboardButton();
         loadData();
         loadNoContJobs();
     </script>

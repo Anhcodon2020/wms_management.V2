@@ -1,4 +1,11 @@
 document.addEventListener("DOMContentLoaded", function() {
+    const menu = document.querySelector('.sidebar .menu');
+    if (menu && !menu.querySelector('a[href="/carton-backup"]')) {
+        const item = document.createElement('li');
+        item.innerHTML = '<a href="/carton-backup">📦 Carton Dự Phòng</a>';
+        menu.appendChild(item);
+    }
+
     // Lấy đường dẫn hiện tại (ví dụ: /dashboard hoặc /inbound.html)
     const currentPath = window.location.pathname;
     const menuLinks = document.querySelectorAll('.sidebar .menu a');

@@ -66,22 +66,28 @@
     <div id="printContainer"></div>
 
     <script>
-        function exportPickingToExcel() {
+        async function exportPickingToExcel() {
             const raw = localStorage.getItem('printPickingData');
             if (!raw) return;
             const data = JSON.parse(raw);
+            await Promise.all([
+                applyInventoryLocIds(data),
+                applyMasterDataWeights(data)
+            ]);
             let exportData = [];
             data.forEach(job => {
-                job.items.forEach(item => {
+                [...(job.items || [])].sort(sortByKgDesc).forEach(item => {
                     exportData.push({
                         "Job No": job.jobNo,
                         "FDC": item.fdc || 'N/A',
                         "Parent PO": item.parentpo || '',
                         "Child PO": item.childpo || '',
                         "SKU": item.sku || '',
-                        "Vi tri": item.lct || '',
+                        "Vi tri": getPickingLocation(item),
                         "Carton": parseFloat(item.carton) || 0,
-                        "CBM": parseFloat(item.cbm) || 0
+                        "CBM/SKU": getSkuCbm(item),
+                        "CBM": parseFloat(item.cbm) || 0,
+                        "KG/SKU": getSkuWeight(item)
                     });
                 });
             });
@@ -100,19 +106,118 @@
             return s;
         }
 
+        function getPickingLocation(row) {
+            return row.inventory_loc_ids || row.inventory_loc_id || 'Đang cập nhật';
+        }
+
+        function normalizeSku(value) {
+            return String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+        }
+
+        function formatKg(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num) || num === 0) return '-';
+            return Number.isInteger(num) ? String(num) : String(Number(num.toFixed(3)));
+        }
+
+        function getSkuWeightNumber(row) {
+            const num = Number(row.master_weight ?? row.weight);
+            return Number.isFinite(num) ? num : 0;
+        }
+
+        function getSkuWeight(row) {
+            return formatKg(row.master_weight ?? row.weight);
+        }
+
+        function getSkuCbm(row) {
+            const num = Number(row.master_cbm);
+            return Number.isFinite(num) && num > 0 ? Number(num.toFixed(4)) : '-';
+        }
+
+        function sortByKgDesc(a, b) {
+            const kgDiff = getSkuWeightNumber(b) - getSkuWeightNumber(a);
+            if (kgDiff !== 0) return kgDiff;
+            if (a.parentpo !== b.parentpo) return String(a.parentpo || '').localeCompare(String(b.parentpo || ''));
+            return String(a.sku || '').localeCompare(String(b.sku || ''));
+        }
+
+        let masterDataCache = null;
+        async function loadMasterDataMap() {
+            if (masterDataCache) return masterDataCache;
+            try {
+                const response = await fetch('/api/masterdata');
+                if (!response.ok) throw new Error('Khong tai duoc master data');
+
+                const data = await response.json();
+                masterDataCache = data.reduce((map, item) => {
+                    const key = normalizeSku(item.sku);
+                    if (!key) return map;
+                    if (!map[key] || Number(item.weight || 0) > 0) {
+                        map[key] = item;
+                    }
+                    return map;
+                }, {});
+                return masterDataCache;
+            } catch (error) {
+                console.warn(error);
+                return {};
+            }
+        }
+
+        async function applyMasterDataWeights(jobData) {
+            const masterDataMap = await loadMasterDataMap();
+            jobData.forEach(job => {
+                (job.items || []).forEach(item => {
+                    const masterItem = masterDataMap[normalizeSku(item.sku)];
+                    if (masterItem) {
+                        item.master_weight = masterItem.weight;
+                        item.master_cbm = masterItem.cbm;
+                    }
+                });
+            });
+        }
+
+        async function applyInventoryLocIds(jobData) {
+            const skus = [...new Set(jobData.flatMap(job => (job.items || []).map(item => item.sku)).filter(Boolean))];
+            if (skus.length === 0) return;
+
+            try {
+                const response = await fetch('/api/inventory-whs/loc-ids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skus })
+                });
+                if (!response.ok) throw new Error('Khong tai duoc loc_id tu inventory_whs');
+
+                const locMap = await response.json();
+                jobData.forEach(job => {
+                    (job.items || []).forEach(item => {
+                        const locIds = locMap[normalizeSku(item.sku)];
+                        if (locIds) item.inventory_loc_ids = locIds;
+                    });
+                });
+            } catch (error) {
+                console.warn(error);
+            }
+        }
+
+        // Logic render trang chính
+        const container = document.getElementById('printContainer');
         const rawData = localStorage.getItem('printPickingData');
-        if (!rawData) {
-            document.getElementById('printContainer').innerHTML = "<div style='text-align:center; padding:50px;'><h1>Khong tim thay du lieu Picking!</h1></div>";
+        if (!rawData) { // Nếu không có dữ liệu, hiển thị thông báo
+            container.innerHTML = "<div style='text-align:center; padding:50px;'><h1>Khong tim thay du lieu Picking!</h1></div>";
         } else {
             const jobData = JSON.parse(rawData);
+            Promise.all([
+                applyInventoryLocIds(jobData),
+                applyMasterDataWeights(jobData)
+            ]).then(() => {
 
             if (jobData.length === 1) {
                 document.title = "PickingList_" + jobData[0].jobNo;
             } else {
                 document.title = "PickingList_Batch";
             }
-
-            const container = document.getElementById('printContainer');
 
             jobData.forEach(job => {
                 if (!job.items || job.items.length === 0) return;
@@ -128,10 +233,7 @@
                 });
 
                 Object.keys(groups).forEach(fdc => {
-                    groups[fdc].sort((a, b) => {
-                        if (a.parentpo !== b.parentpo) return String(a.parentpo || '').localeCompare(String(b.parentpo || ''));
-                        return String(a.sku || '').localeCompare(String(b.sku || ''));
-                    });
+                    groups[fdc].sort(sortByKgDesc);
 
                     let fdcCarton = 0;
                     let fdcCbm = 0;
@@ -161,9 +263,10 @@
                                         <th style="width:12%">Vi tri</th>
                                         <th style="width:8%">Bang</th>
                                         <th style="width:10%">Carton</th>
+                                        <th style="width:10%">CBM/SKU</th>
                                         <th style="width:10%">CBM</th>
                                         <th style="width:8%">Chip</th>
-                                        <th style="width:12%">Ghi chu</th>
+                                        <th style="width:12%">KG/SKU</th>
                                     </tr>
                                 </thead>
                                 <tbody>`;
@@ -176,12 +279,13 @@
                                 <td>${row.parentpo || '-'}</td>
                                 <td>${row.childpo || '-'}</td>
                                 <td><b>${row.sku || '-'}</b></td>
-                                <td>${row.lct || '-'}</td>
+                                <td>${getPickingLocation(row)}</td>
                                 <td style="text-align:center">${row.looscarton || 'N'}</td>
                                 <td style="text-align:center; font-weight:bold">${row.carton || 0}</td>
+                                <td style="text-align:center">${getSkuCbm(row)}</td>
                                 <td>${parseFloat(row.cbm || 0).toFixed(3)}</td>
                                 <td style="text-align:center">${mapChipboardName(row.chipboard)}</td>
-                                <td>${row.remark || ''}</td>
+                                <td style="text-align:center">${getSkuWeight(row)}</td>
                             </tr>`;
                     });
 
@@ -189,7 +293,7 @@
                                 <tr class="total-row">
                                     <td colspan="5" style="text-align:right">Tong ${fdc}:</td>
                                     <td style="text-align:center">${fdcCarton}</td>
-                                    <td colspan="3">${fdcCbm.toFixed(3)}</td>
+                                    <td colspan="4">${fdcCbm.toFixed(3)}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -200,6 +304,7 @@
 
                     container.innerHTML += pageHtml;
                 });
+            });
             });
         }
     </script>

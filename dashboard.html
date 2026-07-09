@@ -100,6 +100,11 @@
                 <div class="value" id="outboundNoContCbm">...</div>
                 <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">Tổng CBM chờ đóng container</div>
             </div>
+            <div class="stat-card" style="border-left-color: #c0392b;">
+                <h3>Backlog</h3>
+                <div class="value" id="backlogCbm">...</div>
+                <div style="font-size: 14px; color: #7f8c8d; margin-top: 5px;">CBM chưa có cont, nhập kho quá 14 ngày</div>
+            </div>
             <div class="stat-card" style="border-left-color: #e74c3c;">
                 <h3>Cảnh báo tồn kho</h3>
                 <div class="value" id="inventoryAlerts">...</div>
@@ -194,6 +199,7 @@
                     document.getElementById('forecastNextWeek').innerText = (data.forecast_next_week || 0).toLocaleString();
                     document.getElementById('forecastNextWeekCbm').innerText = (data.forecast_next_week_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 });
                     document.getElementById('outboundNoContCbm').innerText = (data.outbound_no_cont_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 }) + ' m³';
+                    document.getElementById('backlogCbm').innerText = (data.backlog_cbm || 0).toLocaleString(undefined, { minimumFractionDigits: 3 }) + ' m³';
                     document.getElementById('inventoryAlerts').innerText = (data.alerts || 0).toLocaleString();
                 })
                 .catch(err => {

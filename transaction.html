@@ -29,6 +29,14 @@
         .text-out { color: #e67e22; }
         .clickable-po { color: #3498db; cursor: pointer; text-decoration: underline; }
         .clickable-po:hover { color: #2980b9; }
+        .btn-delete { padding: 6px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .btn-delete:hover { background: #c0392b; }
+        .outbound-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+        .stat-box { background: #f8f9fa; border-left: 4px solid #bdc3c7; padding: 10px 14px; border-radius: 6px; min-width: 150px; }
+        .stat-box.has-cont { border-left-color: #27ae60; }
+        .stat-box.no-cont { border-left-color: #e74c3c; }
+        .stat-label { color: #7f8c8d; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+        .stat-value { color: #2c3e50; font-size: 20px; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -71,6 +79,7 @@
                             <th>Parent PO</th>
                             <th>Số Cont/Xe</th>
                             <th>Số Lượng (Carton)</th>
+                            <th>Hành động</th>
                         </tr>
                     </thead>
                     <tbody id="inboundTableBody"></tbody>
@@ -80,6 +89,20 @@
             <!-- PHẦN 2: OUTBOUND -->
             <div class="transaction-section" style="border-top: 4px solid #e67e22;">
                 <div class="section-title" onclick="filterOutbound('')" style="cursor:pointer;" title="Click để hiện lại tất cả"><span class="text-out">📤</span> Chi Tiết Xuất Kho (Outbound) <span style="margin-left: auto; font-size: 14px; background: #e67e22; color: white; padding: 2px 12px; border-radius: 20px;">Tổng Carton: <span id="outboundTotal">0</span></span></div>
+                <div class="outbound-stats">
+                    <div class="stat-box">
+                        <div class="stat-label">Tổng Carton</div>
+                        <div class="stat-value" id="statOutboundTotal">0</div>
+                    </div>
+                    <div class="stat-box has-cont">
+                        <div class="stat-label">Job có số cont</div>
+                        <div class="stat-value" id="statOutboundHasCont">0</div>
+                    </div>
+                    <div class="stat-box no-cont">
+                        <div class="stat-label">Carton còn lại</div>
+                        <div class="stat-value" id="statOutboundNoCont">0</div>
+                    </div>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -90,6 +113,7 @@
                             <th>Số Container</th>
                             <th>Ngày Đóng Hàng</th>
                             <th>Số Lượng (Carton)</th>
+                            <th>Hành động</th>
                         </tr>
                     </thead>
                     <tbody id="outboundTableBody"></tbody>
@@ -99,6 +123,41 @@
     </div>
 
     <script>
+        function encodeClickValue(value) {
+            return encodeURIComponent(value || '').replace(/'/g, '%27');
+        }
+
+        function hasContainer(container) {
+            const value = String(container || '').trim();
+            return value !== '' && value !== '-';
+        }
+
+        function updateOutboundStatsFromRows() {
+            const rows = document.querySelectorAll('#outboundTableBody tr');
+            let total = 0;
+            let hasContTotal = 0;
+            let noContTotal = 0;
+
+            rows.forEach(row => {
+                if (row.style.display === 'none' || row.cells.length < 8) return;
+
+                const carton = parseFloat(row.cells[6].innerText) || 0;
+                const container = row.cells[4].innerText;
+                total += carton;
+
+                if (hasContainer(container)) {
+                    hasContTotal += carton;
+                } else {
+                    noContTotal += carton;
+                }
+            });
+
+            document.getElementById('outboundTotal').innerText = total;
+            document.getElementById('statOutboundTotal').innerText = total;
+            document.getElementById('statOutboundHasCont').innerText = hasContTotal;
+            document.getElementById('statOutboundNoCont').innerText = noContTotal;
+        }
+
         function fetchTransactions() {
             const sku = document.getElementById('skuInput').value.trim();
             if (!sku) return;
@@ -113,23 +172,30 @@
                     // 1. Render Inbound
                     const inBody = document.getElementById('inboundTableBody');
                     if (data.inbound && data.inbound.length > 0) {
-                        inBody.innerHTML = data.inbound.map(item => `
+                        inBody.innerHTML = data.inbound.map(item => {
+                            const poValue = item.po || '';
+                            const poArg = encodeClickValue(poValue);
+                            return `
                             <tr>
                                 <td>${item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '-'}</td>
-                                <td><b class="clickable-po" onclick="filterOutbound('${item.po}')" title="Lọc dữ liệu xuất kho theo PO này">${item.po || '-'}</b></td>
+                                <td><b class="clickable-po" onclick="filterOutbound(decodeURIComponent('${poArg}'))" title="Lọc dữ liệu xuất kho theo PO này">${item.po || '-'}</b></td>
                                 <td>${item.contxe || '-'}</td>
                                 <td class="qty-val text-in">${item.carton}</td>
+                                <td><button class="btn-delete" onclick="deleteParentPo('inbound', decodeURIComponent('${poArg}'))" ${poValue ? '' : 'disabled'}>Xóa PO</button></td>
                             </tr>
-                        `).join('');
+                        `;
+                        }).join('');
                     } else {
-                        inBody.innerHTML = '<tr><td colspan="4" class="empty-msg">Không có lịch sử nhập kho cho SKU này</td></tr>';
+                        inBody.innerHTML = '<tr><td colspan="5" class="empty-msg">Không có lịch sử nhập kho cho SKU này</td></tr>';
                     }
 
                     // 2. Render Outbound
                     const outBody = document.getElementById('outboundTableBody');
                     if (data.outbound && data.outbound.length > 0) {
-                        let initialTotal = 0;
-                        outBody.innerHTML = data.outbound.map(item => `
+                        outBody.innerHTML = data.outbound.map(item => {
+                            const parentPoValue = item.parentpo || '';
+                            const parentPoArg = encodeClickValue(parentPoValue);
+                            return `
                             <tr>
                                 <td><b class="text-out">${item.jobno}</b></td>
                                 <td>${item.datercv ? new Date(item.datercv).toLocaleDateString('vi-VN') : '-'}</td>
@@ -138,14 +204,18 @@
                                 <td>${item.container || '-'}</td>
                                 <td>${item.datestuff ? new Date(item.datestuff).toLocaleDateString('vi-VN') : '-'}</td>
                                 <td class="qty-val text-out">${item.carton}</td>
+                                <td><button class="btn-delete" onclick="deleteParentPo('outbound', decodeURIComponent('${parentPoArg}'))" ${parentPoValue ? '' : 'disabled'}>Xóa PO</button></td>
                             </tr>
-                        `).join('');
+                        `;
+                        }).join('');
 
-                        data.outbound.forEach(item => initialTotal += parseFloat(item.carton || 0));
-                        document.getElementById('outboundTotal').innerText = initialTotal;
+                        updateOutboundStatsFromRows();
                     } else {
-                        outBody.innerHTML = '<tr><td colspan="6" class="empty-msg">Không có lịch sử xuất kho cho SKU này</td></tr>';
+                        outBody.innerHTML = '<tr><td colspan="8" class="empty-msg">Không có lịch sử xuất kho cho SKU này</td></tr>';
                         document.getElementById('outboundTotal').innerText = '0';
+                        document.getElementById('statOutboundTotal').innerText = '0';
+                        document.getElementById('statOutboundHasCont').innerText = '0';
+                        document.getElementById('statOutboundNoCont').innerText = '0';
                     }
                 })
                 .catch(err => {
@@ -160,7 +230,6 @@
          */
         function filterOutbound(po) {
             const rows = document.querySelectorAll('#outboundTableBody tr');
-            let filteredTotal = 0;
             rows.forEach(row => {
                 if (row.cells.length < 7) return; // Bỏ qua dòng thông báo trống
 
@@ -168,12 +237,31 @@
                 const cellPO = row.cells[2].innerText.trim();
                 if (!po || cellPO === po || cellPO === '-') {
                     row.style.display = '';
-                    filteredTotal += parseFloat(row.cells[6].innerText) || 0;
                 } else {
                     row.style.display = 'none';
                 }
             });
-            document.getElementById('outboundTotal').innerText = filteredTotal;
+            updateOutboundStatsFromRows();
+        }
+
+        function deleteParentPo(type, parentpo) {
+            if (!parentpo) return;
+
+            const label = type === 'inbound' ? 'Inbound' : 'Outbound';
+            const message = `Bạn chắc chắn muốn xóa tất cả dòng ${label} của Parent PO ${parentpo}?`;
+            if (!confirm(message)) return;
+
+            fetch(`/api/${type}/parent/${encodeURIComponent(parentpo)}`, { method: 'DELETE' })
+                .then(async r => {
+                    const result = await r.json();
+                    if (!r.ok) throw new Error(result.error || 'Lỗi xóa dữ liệu');
+                    alert(result.message || 'Đã xóa thành công!');
+                    fetchTransactions();
+                })
+                .catch(err => {
+                    console.error('Lỗi xóa Parent PO:', err);
+                    alert(err.message);
+                });
         }
     </script>
 </body>

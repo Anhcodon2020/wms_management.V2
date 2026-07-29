@@ -7,6 +7,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <!-- Thu vien Xuat Excel (SheetJS) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Thu vien doc noi dung PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <script src="common.js"></script>
     <style>
@@ -111,6 +113,8 @@
                 <button onclick="openModal()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; cursor: pointer;">+ Thêm Mới</button>
                 <button onclick="printTallySheet()" style="padding: 10px 20px; background: #34495e; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;">🖨️ In Tally Sheet</button>
                 <button onclick="openExportModal()" style="padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 5px;">📊 Xuất Excel</button>
+                <button id="pdfImportButton" onclick="document.getElementById('pdfInput').click()" style="padding: 10px 20px; background: #c0392b; color: white; border: none; border-radius: 5px; cursor: pointer;">📄 PDF → Excel</button>
+                <input type="file" id="pdfInput" accept=".pdf,application/pdf" hidden onchange="importPackingListPdf(this.files[0])">
             </div>
         </div>
 
@@ -204,7 +208,11 @@
                     <input type="text" id="po" list="poList" onchange="loadSkusByPo()" placeholder="Nhập hoặc chọn PO">
                     <datalist id="poList"></datalist>
                 </div>
-                <div class="form-group"><label>SKU (*)</label><select id="sku" onchange="updateSkuData()"><option value="">-- Chọn SKU --</option></select></div>
+                <div class="form-group">
+                    <label>SKU (*) - Chọn hoặc nhập thêm</label>
+                    <input type="text" id="sku" list="skuList" oninput="updateSkuData()" placeholder="Chọn SKU hoặc nhập SKU mới" autocomplete="off">
+                    <datalist id="skuList"></datalist>
+                </div>
                 
                 <div class="form-group"><label>Ngày Nhận (Date Rcv)</label><input type="date" id="datercv"></div>
                 <div class="form-group"><label>Packing List No</label><input type="text" id="packinglistno" oninput="updatePLTotals()"></div>
@@ -350,7 +358,8 @@
                 document.querySelectorAll('#dataModal input').forEach(i => i.value = '');
                 document.getElementById('dataId').value = '';
                 document.getElementById('po').value = ''; // Reset input PO
-                document.getElementById('sku').innerHTML = '<option value="">-- Chọn SKU --</option>';
+                document.getElementById('sku').value = '';
+                document.getElementById('skuList').innerHTML = '';
                 document.getElementById('tenncc').value = '';
                 document.getElementById('plTotalCarton').value = '0';
                 document.getElementById('plTotalCbm').value = '0.000';
@@ -397,12 +406,13 @@
         // 2. Load SKU theo PO da chon
         function loadSkusByPo(preSelectedSku = null) {
             const parentPo = document.getElementById('po').value;
-            const skuSel = document.getElementById('sku');
-            skuSel.innerHTML = '<option value="">-- Đang tải... --</option>';
+            const skuInput = document.getElementById('sku');
+            const skuList = document.getElementById('skuList');
+            skuList.innerHTML = '';
             currentSkuList = []; // Reset list
 
             if (!parentPo) {
-                skuSel.innerHTML = '<option value="">-- Chọn SKU --</option>';
+                skuInput.value = preSelectedSku || '';
                 return;
             }
 
@@ -413,7 +423,7 @@
                 })
                 .then(data => {
                     currentSkuList = data; // Luu lai de dung CBM sau nay
-                    skuSel.innerHTML = '<option value="">-- Chọn SKU --</option>';
+                    skuList.innerHTML = '';
                     
                     if (!Array.isArray(data)) return;
 
@@ -436,22 +446,29 @@
 
                     data.forEach(item => {
                         // item.cbm o day la CBM tren 1 don vi/case trong BBR
-                        skuSel.innerHTML += `<option value="${item.item}" data-cbm="${item.cbm}">${item.item}</option>`;
+                        const option = document.createElement('option');
+                        option.value = item.item || '';
+                        option.label = `CBM/SKU: ${item.cbm || 0}`;
+                        skuList.appendChild(option);
                     });
-                    if (preSelectedSku) skuSel.value = preSelectedSku;
+                    if (preSelectedSku) skuInput.value = preSelectedSku;
+                    calculateTotalCBM();
                 })
                 .catch(e => {
                     console.error(e);
                     showToast('Lỗi tải danh sách SKU: ' + e.message, 'error');
-                    skuSel.innerHTML = '<option value="">-- Lỗi tải SKU --</option>';
+                    skuList.innerHTML = '';
+                    if (preSelectedSku) skuInput.value = preSelectedSku;
                 });
         }
 
         // 3. Tinh toan CBM = So Carton * CBM (trong BBR)
         function calculateTotalCBM() {
-            const skuSel = document.getElementById('sku');
-            const selectedOption = skuSel.options[skuSel.selectedIndex];
-            const unitCbm = parseFloat(selectedOption.getAttribute('data-cbm')) || 0;
+            const skuValue = document.getElementById('sku').value.trim().toLowerCase();
+            const skuData = currentSkuList.find(item =>
+                String(item.item || '').trim().toLowerCase() === skuValue
+            );
+            const unitCbm = skuData ? (parseFloat(skuData.cbm) || 0) : 0;
             const carton = parseFloat(document.getElementById('carton').value) || 0;
 
             document.getElementById('cbm').value = (unitCbm * carton).toFixed(3);
@@ -773,9 +790,11 @@
                     dataToSave.carton = total;
                     
                     // Tinh lai CBM theo so luong thuc nhan moi
-                    const skuSel = document.getElementById('sku');
-                    const selectedOption = skuSel.options[skuSel.selectedIndex];
-                    const unitCbm = parseFloat(selectedOption.getAttribute('data-cbm')) || 0;
+                    const skuValue = document.getElementById('sku').value.trim().toLowerCase();
+                    const skuData = currentSkuList.find(item =>
+                        String(item.item || '').trim().toLowerCase() === skuValue
+                    );
+                    const unitCbm = skuData ? (parseFloat(skuData.cbm) || 0) : 0;
                     dataToSave.cbm = (unitCbm * total).toFixed(3);
                 }
             }
@@ -1052,6 +1071,145 @@
                     console.error('Lỗi export', err);
                     showToast('Lỗi xuất Excel: ' + err.message, 'error');
                 });
+        }
+
+        function groupPdfItemsByLine(items) {
+            const lines = [];
+            items.filter(item => item.str && item.str.trim()).forEach(item => {
+                const y = item.transform[5];
+                let line = lines.find(current => Math.abs(current.y - y) <= 2.5);
+                if (!line) {
+                    line = { y, items: [] };
+                    lines.push(line);
+                }
+                line.items.push({ text: item.str.trim(), x: item.transform[4] });
+            });
+            lines.forEach(line => {
+                line.items.sort((a, b) => a.x - b.x);
+                line.text = line.items.map(item => item.text).join(' ').replace(/\s+/g, ' ').trim();
+            });
+            return lines.sort((a, b) => b.y - a.y);
+        }
+
+        function getPdfField(lines, labelPattern) {
+            for (let index = 0; index < lines.length; index++) {
+                const text = lines[index].text;
+                if (!labelPattern.test(text)) continue;
+                labelPattern.lastIndex = 0;
+                let value = text.replace(labelPattern, '').replace(/^[\s:#-]+/, '').trim();
+                if (value) return value.split(/\s{2,}/)[0].trim();
+                if (lines[index + 1]) return lines[index + 1].text.trim();
+            }
+            return '';
+        }
+
+        function findHeaderPosition(line, pattern, fallbackPattern) {
+            const item = line.items.find(entry => pattern.test(entry.text))
+                || line.items.find(entry => fallbackPattern && fallbackPattern.test(entry.text));
+            return item ? item.x : null;
+        }
+
+        function extractPackingRows(lines, packingListNo, containerNo) {
+            const rows = [];
+            lines.forEach((header, headerIndex) => {
+                const headerText = header.text.toLowerCase();
+                if (!headerText.includes('po') || !headerText.includes('carton')
+                    || (!headerText.includes('spr') && !headerText.includes('item'))) return;
+
+                const poX = findHeaderPosition(header, /^po\b/i, /po/i);
+                const skuX = findHeaderPosition(header, /spr/i, /\bitem\b/i);
+                const cartonX = findHeaderPosition(header, /carton/i);
+                if (poX === null || skuX === null || cartonX === null || !(poX < skuX && skuX < cartonX)) return;
+
+                const poSkuBoundary = (poX + skuX) / 2;
+                const skuCartonBoundary = (skuX + cartonX) / 2;
+                const poMin = Math.max(0, poX - (skuX - poX) * 0.45);
+                const cartonMax = cartonX + Math.max(70, (cartonX - skuX) * 0.8);
+
+                for (let index = headerIndex + 1; index < lines.length; index++) {
+                    const line = lines[index];
+                    const lower = line.text.toLowerCase();
+                    if (index > headerIndex + 1 && lower.includes('po') && lower.includes('carton')) break;
+                    if (/total|grand total|signature|prepared|remark/i.test(lower)) break;
+
+                    const po = line.items.filter(item => item.x >= poMin && item.x < poSkuBoundary).map(item => item.text).join(' ').trim();
+                    const sku = line.items.filter(item => item.x >= poSkuBoundary && item.x < skuCartonBoundary).map(item => item.text).join(' ').trim();
+                    const cartonText = line.items.filter(item => item.x >= skuCartonBoundary && item.x <= cartonMax).map(item => item.text).join(' ');
+                    const cartonMatch = cartonText.replace(/,/g, '').match(/\b\d+\b/);
+
+                    if (po && sku && cartonMatch && !/^(po|no|item)$/i.test(po) && !/^(spr|item|no)$/i.test(sku)) {
+                        rows.push({
+                            'Packing List No #': packingListNo,
+                            'PO No': po,
+                            'SPR Item NO': sku,
+                            'Cartons': Number(cartonMatch[0]),
+                            'Container No': containerNo
+                        });
+                    }
+                }
+            });
+            return rows;
+        }
+
+        async function importPackingListPdf(file) {
+            if (!file) return;
+            const button = document.getElementById('pdfImportButton');
+            button.disabled = true;
+            button.textContent = '⏳ Đang đọc PDF...';
+
+            try {
+                if (!window.pdfjsLib) throw new Error('Không tải được thư viện đọc PDF');
+                pdfjsLib.GlobalWorkerOptions.workerSrc =
+                    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+                const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+                const excelRows = [];
+                let lastPackingListNo = '';
+                let lastContainerNo = '';
+
+                for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+                    const page = await pdf.getPage(pageNo);
+                    const content = await page.getTextContent();
+                    const lines = groupPdfItemsByLine(content.items);
+                    if (!lines.length) continue;
+
+                    const packingListNo = getPdfField(lines, /packing\s*list\s*no\s*#?/i) || lastPackingListNo;
+                    const containerNo = getPdfField(lines, /container\s*(?:no|number)\s*#?/i) || lastContainerNo;
+                    if (packingListNo) lastPackingListNo = packingListNo;
+                    if (containerNo) lastContainerNo = containerNo;
+                    excelRows.push(...extractPackingRows(lines, packingListNo, containerNo));
+                }
+
+                if (!excelRows.length) {
+                    throw new Error('Không nhận diện được bảng dữ liệu. PDF có thể là bản scan hình ảnh hoặc bố cục khác mẫu.');
+                }
+
+                const uniqueRows = excelRows.filter((row, index, array) =>
+                    index === array.findIndex(item =>
+                        item['Packing List No #'] === row['Packing List No #']
+                        && item['PO No'] === row['PO No']
+                        && item['SPR Item NO'] === row['SPR Item NO']
+                        && item.Cartons === row.Cartons
+                        && item['Container No'] === row['Container No']
+                    )
+                );
+                const worksheet = XLSX.utils.json_to_sheet(uniqueRows, {
+                    header: ['Packing List No #', 'PO No', 'SPR Item NO', 'Cartons', 'Container No']
+                });
+                worksheet['!cols'] = [{ wch: 24 }, { wch: 22 }, { wch: 24 }, { wch: 12 }, { wch: 22 }];
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Packing List');
+                const baseName = file.name.replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]/g, '_');
+                XLSX.writeFile(workbook, `${baseName}_Converted.xlsx`);
+                showToast(`Đã chuyển ${uniqueRows.length} dòng từ PDF sang Excel!`);
+            } catch (error) {
+                console.error('Lỗi chuyển PDF sang Excel:', error);
+                showToast(error.message || 'Không thể xử lý file PDF', 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = '📄 PDF → Excel';
+                document.getElementById('pdfInput').value = '';
+            }
         }
 
         loadData();

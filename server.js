@@ -649,6 +649,37 @@ app.post('/api/masterdata/import', async (req, res) => {
 });
 
 // 5. Import BBR Report tu Excel (Logic phuc tap theo yeu cau)
+function parseImportDeliveryDate(value) {
+    if (!value) return null;
+
+    if (typeof value === 'number') {
+        const excelEpoch = Date.UTC(1899, 11, 30);
+        const date = new Date(excelEpoch + value * 24 * 60 * 60 * 1000);
+        return date.toISOString().slice(0, 10);
+    }
+
+    if (value instanceof Date && !isNaN(value)) {
+        return value.toISOString().slice(0, 10);
+    }
+
+    const text = String(value).trim();
+    const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    }
+
+    const slashMatch = text.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (slashMatch) {
+        const day = slashMatch[1].padStart(2, '0');
+        const month = slashMatch[2].padStart(2, '0');
+        const year = slashMatch[3].length === 2 ? `20${slashMatch[3]}` : slashMatch[3];
+        return `${year}-${month}-${day}`;
+    }
+
+    const parsed = new Date(text);
+    return isNaN(parsed) ? null : parsed.toISOString().slice(0, 10);
+}
+
 app.post('/api/bbr/import', async (req, res) => {
     const data = req.body;
     if (!Array.isArray(data)) return res.status(400).json({ error: "Dữ liệu không hợp lệ" });
@@ -665,6 +696,7 @@ app.post('/api/bbr/import', async (req, res) => {
                 const item = row['ITEM NO'] ? String(row['ITEM NO']).trim() : '';
                 const parentpo = row['PARENT PO'] ? String(row['PARENT PO']).trim() : '';
                 const hub_dc = row['HUB DC'] || row['hub_dc'] || row['ToHubDC_ID'] || '';
+                const deliveryDate = parseImportDeliveryDate(row['DELIVERY DT']);
                 
                 if (!po || !item) {
                     errors.push({ row: index + 2, error: "Thiếu PO hoặc Item", po, item });
@@ -683,10 +715,10 @@ app.post('/api/bbr/import', async (req, res) => {
                 );
 
                 if (existing.length > 0) {
-                    // --- CASE 1: UPDATE (Chi cap nhat Qty) ---
+                    // --- CASE 1: UPDATE ---
                     await connection.promise().query(
-                        'UPDATE bbrreport SET qty = ? WHERE id = ?',
-                        [finalQty, existing[0].id]
+                        'UPDATE bbrreport SET qty = ?, deliverydate = COALESCE(?, deliverydate) WHERE id = ?',
+                        [finalQty, deliveryDate, existing[0].id]
                     );
                     updatedCount++;
                 } else {
@@ -694,12 +726,6 @@ app.post('/api/bbr/import', async (req, res) => {
                     const origin = row['Origin'] || row['origin'] || '';
                     const supplier = row['VNDR CD'] || ''; // Mapping VNDR CD -> supplier
                     const cbm = parseFloat(row['MC CBM'] || 0);
-                    
-                    // Xu ly Ngay Giao (Delivery Date)
-                    let deliveryDate = row['DELIVERY DT'] ? new Date(row['DELIVERY DT']) : new Date();
-                    // Logic cong ngay: VN giu nguyen DELIVERY DT, khac VN +14 ngay
-                    const daysToAdd = (String(origin).trim().toUpperCase() === 'VN') ? 0 : 14;
-                    deliveryDate.setDate(deliveryDate.getDate() + daysToAdd);
 
                     const sql = `INSERT INTO bbrreport (po, item, parentpo, origin, supplier, qty, cbm, deliverydate, hub_DC, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'New')`;
                     await connection.promise().query(sql, [po, item, parentpo, origin, supplier, finalQty, cbm, deliveryDate, hub_dc]);
@@ -917,6 +943,18 @@ app.delete('/api/inbound/by-packinglist/:plNo', (req, res) => {
     });
 });
 
+// 5. Xoa toan bo dong Inbound theo Parent PO
+app.delete('/api/inbound/parent/:parentpo', (req, res) => {
+    const { parentpo } = req.params;
+    if (!parentpo) return res.status(400).json({ error: 'Thiếu Parent PO' });
+
+    const sql = 'DELETE FROM inbound WHERE po = ?';
+    connection.query(sql, [parentpo], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `Đã xóa Inbound Parent PO ${parentpo} (${result.affectedRows} dòng).` });
+    });
+});
+
 // --- API: Hỗ trợ Dropdown cho TCR (Lấy từ Inbound) ---
 app.get('/api/inbound/dropdown/po', (req, res) => {
     const sql = "SELECT DISTINCT po FROM inbound WHERE po IS NOT NULL AND TRIM(po) <> '' ORDER BY po ASC";
@@ -1123,7 +1161,19 @@ app.put('/api/outbound/stuffing', (req, res) => {
     });
 });
 
-// 7. Xóa 1 dòng Outbound (chi tiết) theo ID
+// 7. Xoa toan bo dong Outbound theo Parent PO
+app.delete('/api/outbound/parent/:parentpo', (req, res) => {
+    const { parentpo } = req.params;
+    if (!parentpo) return res.status(400).json({ error: 'Thiếu Parent PO' });
+
+    const sql = 'DELETE FROM outbound WHERE parentpo = ?';
+    connection.query(sql, [parentpo], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `Đã xóa Outbound Parent PO ${parentpo} (${result.affectedRows} dòng).` });
+    });
+});
+
+// 8. Xóa 1 dòng Outbound (chi tiết) theo ID
 app.delete('/api/outbound/:id', (req, res) => {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Thiếu ID' });

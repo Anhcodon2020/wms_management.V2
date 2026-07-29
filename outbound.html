@@ -445,6 +445,19 @@
             return dateStr.split('T')[0];
         }
 
+        function formatDateGMT7(dateStr) {
+            if (!dateStr) return '';
+
+            const raw = String(dateStr).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+            const date = new Date(raw);
+            if (Number.isNaN(date.getTime())) return raw.split('T')[0];
+
+            const gmt7Date = new Date(date.getTime() + (7 * 60 * 60 * 1000));
+            return gmt7Date.toISOString().split('T')[0];
+        }
+
         // Ham load du lieu tu Server
         function loadData() {
             const q = document.getElementById('searchInput').value;
@@ -497,6 +510,7 @@
 
                 const dStuff = item.datestuff ? new Date(item.datestuff).toLocaleDateString('vi-VN') : '-';
                 const parentInfo = item.parentpo ? `<br><span style="font-size:11px; color:#666;">P: ${item.parentpo}</span>` : '';
+                const parentPoArg = encodeClickValue(item.parentpo || '');
                 const displayLoc = item.inventory_loc_ids || item.inventory_loc_id || '';
                 const locInfo = displayLoc ? `<br><span style="font-size:11px; color:#27ae60;">LOC: ${displayLoc}</span>` : '';
                 
@@ -519,6 +533,7 @@
                     <td>
                         <button class="btn-edit" onclick='openModal(currentData[${index}])'>✏️ Sửa</button>
                         <button class="btn-delete-action" style="margin-top: 5px;" onclick='deleteOutboundItem(${item.id}, "${item.jobno}")'>🗑️ Xóa</button>
+                        <button class="btn-delete-action" style="margin-top: 5px;" onclick="deleteOutboundParentPo(decodeURIComponent('${parentPoArg}'))" ${item.parentpo ? '' : 'disabled'}>Xóa Parent PO</button>
                     </td>
                 `;
                 tb.appendChild(tr);
@@ -1091,7 +1106,7 @@
 
                 rows.forEach(item => {
                     const container = String(item.container || '').trim().toUpperCase();
-                    const dateStuffing = item.datestuff ? String(item.datestuff).split('T')[0] : '';
+                    const dateStuffing = formatDateGMT7(item.datestuff);
                     if (!container || !dateStuffing) return;
 
                     const key = `${dateStuffing}|${container}`;
@@ -1280,6 +1295,9 @@
             loadData();
         }
 
+        function encodeClickValue(value) {
+            return encodeURIComponent(value || '').replace(/'/g, '%27');
+        }
 
         function deleteOutboundItem(id, jobno) {
             if (!confirm(`Bạn có chắc chắn muốn xóa dòng chi tiết này của Job: ${jobno}?`)) return;
@@ -1289,6 +1307,18 @@
                 if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
                 showToast('Đã xóa thành công!');
                 loadData(); // Tải lại bảng sau khi xóa
+            }).catch(e => showToast(e.message, 'error'));
+        }
+
+        function deleteOutboundParentPo(parentpo) {
+            if (!parentpo) return;
+            if (!confirm(`Bạn có chắc muốn XÓA TOÀN BỘ dữ liệu Outbound của Parent PO: ${parentpo}?\nHành động này không thể hoàn tác!`)) return;
+
+            fetch(`/api/outbound/parent/${encodeURIComponent(parentpo)}`, { method: 'DELETE' })
+            .then(async r => {
+                if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
+                showToast(`Đã xóa Outbound Parent PO ${parentpo}`);
+                loadData();
             }).catch(e => showToast(e.message, 'error'));
         }
 

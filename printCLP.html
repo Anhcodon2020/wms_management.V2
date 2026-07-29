@@ -77,11 +77,49 @@
         .inspection-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         .inspection-table th, .inspection-table td { border: 1px solid #000; padding: 2px 3px; vertical-align: middle; }
         .inspection-title { font-size: 14px; font-weight: bold; text-align: center; line-height: 1.25; }
+        .inspection-subtitle { font-size: 12px; font-weight: bold; text-align: center; line-height: 1.25; }
+        .inspection-subtitle1 { font-size: 10px; font-weight: normal; text-align: right; line-height: 1.25; }
         .inspection-section { font-weight: bold; background: #eee; text-align: left; }
         .inspection-check { width: 23px; height: 13px; display: inline-block; border: 1px solid #000; vertical-align: middle; }
         .inspection-items td { height: 15px; }
         .inspection-write { height: 18px; }
         .inspection-pictures td { height: 44px; text-align: center; color: #777; }
+        .table-2 {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }
+
+            .table-2 td {
+                border: 1px solid #000;
+                text-align: center;
+                padding: 5px;
+                font-weight: bold;
+            }
+            .table-3 {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }
+
+            .table-3 td {
+                border: 1px solid #000;
+                text-align: center;
+                padding: 5px;
+                font-weight: bold;
+            }
+            .table-4 {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }
+
+            .table-4 td {
+                border: 1px solid #000;
+                text-align: center;
+                padding: 5px;
+                font-weight: bold;
+            }
     </style>
 </head>
 <body>
@@ -164,36 +202,299 @@
                 return `
                     <div class="inspection-page">
                         <table class="inspection-table">
+                            <colgroup>
+                                <col style="width:33%">
+                                <col style="width:33%">
+                                <col style="width:34%">
+                               <col span="6" style_1="width:16.66%">
+                            </colgroup>
+                            <!-- HEADER -->
                             <tr>
-                                <td rowspan="3" style="width:18%; text-align:center"><b>KILVN</b></td>
-                                <td rowspan="3" colspan="4" class="inspection-title">GA-CTPAT-CONTAINER INSPECTION-REPORT<br>BIÊN BẢN XÁC NHẬN TÌNH TRẠNG CONTAINER</td>
-                                <td><b>Document No.</b></td><td>GA-REP-020</td>
+                                <td colspan="7" class="inspection-title">
+                                    CÔNG TY TNHH KLN INTEGRATED LOGISTICS (VIỆT NAM)
+                                </td>
                             </tr>
-                            <tr><td><b>Revision</b></td><td>01</td></tr>
-                            <tr><td><b>Valid date</b></td><td>25-Aug-21</td></tr>
-                            <tr><td colspan="7" style="text-align:right"><b>Date (Ngày):</b> ${safe(stuffDate)}</td></tr>
-                            <tr><td colspan="2"><b>Container size:</b></td><td colspan="5">${safe(first.containersize || first.container_size || first.containertype || '')}</td></tr>
-                            <tr><td colspan="2"><b>Container number (Số Container):</b></td><td colspan="2">${safe(first.container || '')}</td><td><b>Seal number (Số Seal):</b></td><td colspan="2">${safe(first.seal || '')}</td></tr>
-                            <tr><td colspan="2"><b>Name of truck owner (Tên chủ xe/tài xế):</b></td><td colspan="2"></td><td><b>Truck number (Số Xe):</b></td><td colspan="2"></td></tr>
-                            <tr><td colspan="2"><b>Date/Time container arrival (Ngày giờ Container đến):</b></td><td colspan="2"></td><td><b>Date/Time container out of factory (Ngày giờ Container đi):</b></td><td colspan="2"></td></tr>
-                            <tr><td colspan="2"><b>Date/Time container inspection (Ngày giờ kiểm Container):</b></td><td colspan="5"></td></tr>
                             <tr>
-                                <th style="width:4%">STT</th><th style="width:36%">Nội dung kiểm tra</th>
-                                <th colspan="2">1. Container</th><th colspan="2">2. Trailer</th><th>3. Remark</th>
+                                <td colspan="7" class="inspection-subtitle">
+                                    BÁO CÁO KIỂM TRA CONTAINER VÀ XUẤT HÀNG (7 ĐIỂM)
+                                </td>
                             </tr>
-                            <tr><th></th><th></th><th>Tốt</th><th>Không tốt</th><th>Tốt</th><th>Không tốt</th><th></th></tr>
-                            ${checkRows}
-                            <tr><td colspan="2"><b>Kết luận / Result:</b></td><td colspan="2"><span class="inspection-check"></span> Được phép đóng hàng</td><td colspan="3"><span class="inspection-check"></span> Không được phép đóng hàng</td></tr>
-                            <tr><td colspan="3"><b>Date/Time start of loading cargo<br>(Ngày giờ bắt đầu đóng hàng)</b></td><td></td><td colspan="2"><b>Date/Time end of loading cargo<br>(Ngày giờ kết thúc đóng hàng)</b></td><td></td></tr>
-                            <tr><td colspan="7" class="inspection-section">Cargoes loaded in container</td></tr>
-                            <tr><th>STT<br>No</th><th>Hàng hóa<br>Commodity</th><th>Mã hàng<br>Style</th><th>Số PO<br>PO#</th><th>Số lượng thùng<br>No of cartons</th><th>Số khối<br>CBM</th><th>Ghi chú<br>Remark</th></tr>
-                            ${cargoRows}${blankCargoRows}
-                            <tr><td colspan="7" class="inspection-section">Công nhân viên tham gia xuất hàng (List of people taking part)</td></tr>
-                            <tr><th>STT</th><th>Họ & Tên<br>Full name</th><th>Mã số<br>ID#</th><th>Bộ phận<br>Department</th><th>Giờ bắt đầu<br>Start time</th><th>Giờ kết thúc<br>End time</th><th>Ký tên<br>Signature</th></tr>
-                            ${peopleRows}
-                            <tr><td colspan="7" class="inspection-section">Hình minh họa (Picture)</td></tr>
-                            <tr class="inspection-pictures"><td colspan="3">PICTURE 1</td><td colspan="2">PICTURE 2</td><td colspan="2">PICTURE 3</td></tr>
-                        </table>
+                            <tr>
+                                <td colspan="7" class="inspection-subtitle1">
+                                  <b>Mã số :KLNVN_AN_NXK-04</b>
+                                </td>
+                            </tr>
+                            <tr>
+                            <tr style="height:20px;"></tr>
+                            <td colspan="7" class="inspection-section" style="height:30px;">
+                                    PHẦN 1: NHẬN CONTAINER (CONTAINER RECEIVING)
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="width:33%; text-align:center;"><b>Ngày</b></td>
+                                <td style="width:33%; text-align:center;"><b>Giờ</b></td>
+                                <td style="width:34%; text-align:center;"><b>Nhận xét</b></td>
+                            </tr>
+  
+                            <tr style="height:45px;">
+                                <td style="text-align:center; font-size:16px;"><b>${safe(stuffDate)}</b></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+
+                            <tr>
+                                <td colspan="7" style="text-align:right; font-size:12px;">
+                                    <b>Chụp ảnh kiểm cont / Container inspection photo:</b>
+                                    Yes <span class="check-box"></span>
+                                    &nbsp;&nbsp;&nbsp;
+                                    No <span class="check-box"></span>
+                                </td>
+                            </tr>
+                            <tr>
+                             <tr style="height:20px;"></tr>
+                            <td colspan="7" class="inspection-section" style="height:30px;">
+                                    PHẦN 2: KIỂM CONTAINER
+                                </td>
+                            </tr>
+                            <td colspan="3" style="padding:0;">
+                            <table style="width:100%; border-collapse:collapse;">
+                                <tr>
+                                    <td style="width:20%; border-right:1px solid #000;">
+                                        <b>Số Container:</b>
+                                    </td>
+                                    <td style="width:20%; border-right:1px solid #000; text-align:center;">
+                                        <b>${safe(first.container || '')}</b>
+                                    </td>
+                                    <td style="width:20%;">
+                                        <b>Số Seal:</b>
+                                    </td>
+                                    <td style="width:20%; text-align:center;">
+                                        <b>${safe(first.seal || '')}
+                                    </td>
+                                     <td style="width:10%;">
+                                        <b>Loại container:</b>
+                                    </td>
+                                    <td style="width:20%; text-align:center;">
+                                        <b>40 HC</b>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                           <table class="inspection-table">
+                                <tr>
+                                    <th rowspan="2" style="width:45%">Các điểm kiểm tra cont</th>
+                                    <th rowspan="2" colspan="2" style="width:25%">Có kiểm tra hay không</th>
+                                    <th colspan="3" style="width:30%">Nhận xét </th>
+                                </tr>
+                                <tr>
+                                   
+                                    <th>Tốt</th>
+                                    <th>Bình thường</th>
+                                    <th>Xấu</th>
+                                </tr>
+
+                                <tr>
+                                    <td>Mặt trước</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Mặt trái</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Mặt phải</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Sàn</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Trần</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Kích thước bên trong</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+
+                                <tr>
+                                    <td>Khóa</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+                                <tr>
+                                    <td>Gầm Container</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                </tr>
+                                <tr>
+                                    <td>Mối, mọt , côn trùng, ẩm ướt, nấm mốc,mùi hóa chất, mùi xác động vật, mùi lạ, sinh vật sinh sống hoặc sản phẩm hữu cơ từ động vật (bao gồm vỏ trứng, ấu trùng, máu, xương, lông, thịt, dịch tiết, bài tiết</td>
+                                    <td class="center">Yes</td>
+                                    <td class="center">No</td>
+                                    <td></td><td></td><td></td>
+                                    <tr>
+                                    <td colspan="7" style="text-align:right; font-size:12px;">
+                                    <b>Chụp ảnh kiểm container / Container inspection photo:</b>
+                                    Yes <span class="check-box"></span>
+                                    &nbsp;&nbsp;&nbsp;
+                                    No <span class="check-box"></span>
+                                </td>
+                            </tr>
+                            <tr>
+                            <td colspan="7" class="inspection-section">
+                                    PHẦN 3: LÊN CONTAINER (CONTAINER STUFFING)
+                            </td>
+                        </tr>
+                          <table class="table-2">
+                                <tr>
+                                    <td>Ngày</td>
+                                    <td>Giờ</td>
+                                    <td>Job No</td>
+                                    <td>Số lượng</td>
+                                    <td>Số thùng</td>
+                            
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;"><b>${safe(stuffDate)}</b></td>
+                                    <td></td>
+                                    <td>${safe(job.jobNo)}</td>
+                                    <td></td>
+                                    <td>${safe(job.jobNo.carton)}</td>
+                            </table>
+                                                       
+                            <table class="table-3">
+                                <colgroup>
+                                    <col span="3" style="width:50%">
+                                    <col span="3" style="width:25%">
+                                    <col span="3" style="width:25%">
+                                </colgroup>
+
+                                <tr>
+                                    <td rowspan="2" colspan="3">Kết quả cân trọng lượng mỗi thùng</td>
+                                    <td colspan="3" class="center">Như nhau</td>
+                                    <td colspan="3" class="center">Không giống nhau</td>
+                                </tr>
+
+                                <tr>
+                                    
+                                    <td colspan="3" class="center">Yes</td>
+                                    <td colspan="3" class="center">No</td>
+                                </tr>
+                                </table>
+                                <br></br>
+                                <table class="table-4">
+                                <tr>
+                                    <td style="width: 33.33%; text-align: left; font-weight: bold;">
+                                        Bảo vệ
+                                    </td>
+                                    <td style="width: 33.33%; text-align: center; font-weight: bold;">
+                                        Kho
+                                    </td>
+                                    <td style="width: 33.33%; text-align: right; font-weight: bold;">
+                                        Bộ phận xuất hàng
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 50px;"></td>
+                                    <td></td>
+                                    <td></td>
+                               </table>
+                                <br></br>
+                               <table class="inspection-table">
+                                <tr>
+                                    <td colspan="7" class="inspection-section">
+                                            PHẦN 4: Xuất Container (CONTAINER DISPATCH)
+                                    </td>
+                                </tr>  
+                                <tr>
+                                <td colspan="7" style="text-align:right; font-size:12px;">
+                                    <b>Chụp ảnh kiểm cont / Container inspection photo:</b>
+                                    Yes <span class="check-box"></span>
+                                    &nbsp;&nbsp;&nbsp;
+                                    No <span class="check-box"></span>
+                                </td>
+                            </tr>
+                            </table>
+                         <table class="table-4">
+                                <tr>
+                                    <td style="width: 33.33%; text-align: center; font-weight: bold;">
+                                       Quy trình
+                                    </td>
+                                    <td style="width: 33.33%; text-align: center; font-weight: bold;">
+                                        Ngày
+                                    </td>
+                                    <td style="width: 33.33%; text-align: center; font-weight: bold;">
+                                        Thời gian hoàn thành
+                                    </td>
+                                    <td style="width: 33.33%; text-align: center; font-weight: bold;">
+                                        Xác nhận bởi
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;"> Khóa container</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>Quản lý kho</td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;">Ra khỏi cổng</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>Bảo vệ</td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;">Đến hải quan</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>Bộ phận lên container</td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;">Ra khỏi hải quan</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td rowspan="2">Chủ quản BP xuất hàng</td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px;">Đến cảng</td>
+                                    <td></td>
+                                    <td></td>
+                                   
+                                </tr>
+                         </table>
+                         <br></br>
+                         <table class="table-4">
+                                <tr>
+                                    <td style="width: 50%; text-align: center; font-weight: bold;">
+                                        Tài xế xe
+                                    </td>
+                                    <td style="width: 50%; text-align: center; font-weight: bold;">
+                                        Người kiểm tra
+                                    </td>
+                                </tr> 
+                                <tr>
+                                    <td style="height: 50px;"></td>
+                                    <td></td>
+                            </table>
                     </div>`;
             };
 

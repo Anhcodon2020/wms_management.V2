@@ -864,6 +864,40 @@
         }
 
         // --- LOGIC IMPORT BBR ---
+        function formatImportDeliveryDate(value) {
+            if (!value) return null;
+
+            if (value instanceof Date && !isNaN(value)) {
+                const year = value.getFullYear();
+                const month = String(value.getMonth() + 1).padStart(2, '0');
+                const day = String(value.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            if (typeof value === 'number') {
+                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                const date = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
+                return date.toISOString().slice(0, 10);
+            }
+
+            const text = String(value).trim();
+            const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (isoMatch) {
+                return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+            }
+
+            const slashMatch = text.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if (slashMatch) {
+                const day = slashMatch[1].padStart(2, '0');
+                const month = slashMatch[2].padStart(2, '0');
+                const year = slashMatch[3].length === 2 ? `20${slashMatch[3]}` : slashMatch[3];
+                return `${year}-${month}-${day}`;
+            }
+
+            const parsed = new Date(text);
+            return isNaN(parsed) ? null : parsed.toISOString().slice(0, 10);
+        }
+
         function processImportBBR() {
             const fileInput = document.getElementById('excelBBRInput');
             const file = fileInput.files[0];
@@ -877,7 +911,10 @@
                     
                     const firstSheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[firstSheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet).map(row => ({
+                        ...row,
+                        'DELIVERY DT': formatImportDeliveryDate(row['DELIVERY DT'])
+                    }));
 
                     if (jsonData.length === 0) {
                         showToast('File Excel không có dữ liệu!', 'error');

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cập Nhật Vị Trí Tồn Kho - WMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .filters { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap: 15px; align-items: end; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 13px; color: #566573; font-weight: 600; }
+        select, input { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #d7dfe5; border-radius: 5px; background: white; }
+        .btn { border: 0; border-radius: 5px; padding: 10px 18px; color: white; cursor: pointer; font-weight: 600; }
+        .btn-update { background: #27ae60; }
+        .btn-update:disabled { background: #aab7b8; cursor: not-allowed; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; background: white; font-size: 14px; }
+        th, td { padding: 11px 13px; border-bottom: 1px solid #edf0f2; text-align: left; }
+        th { background: #2980b9; color: white; }
+        td.number, th.number { text-align: right; }
+        .empty { text-align: center; color: #7f8c8d; padding: 25px; }
+        .has-location { background: #e8f6f3; }
+        .has-location:hover { background: #d5f1e8; }
+        .status { min-height: 20px; margin-top: 12px; font-size: 14px; }
+        .status.error { color: #c0392b; }
+        .status.success { color: #218c54; }
+        @media (max-width: 800px) {
+            .filters { grid-template-columns: 1fr; }
+            .header { align-items: flex-start; flex-direction: column; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a class="active" href="/UpdateLoc.html">📍 Cập Nhật Vị Trí</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <div class="header">
+            <h2>📍 Cập Nhật Vị Trí Tồn Kho</h2>
+            <span id="selectedInfo" style="color:#7f8c8d; font-size:13px;"></span>
+        </div>
+
+        <section class="card">
+            <div class="filters">
+                <div class="form-group">
+                    <label for="dateRcv">Ngày nhập</label>
+                    <input id="dateRcv" type="date" onchange="loadPackingLists()">
+                </div>
+                <div class="form-group">
+                    <label for="packingListNo">Packing List No</label>
+                    <select id="packingListNo" onchange="loadJobItems()">
+                        <option value="">-- Chọn Packing List --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="location">Vị trí (loc_id)</label>
+                    <input id="location" type="text" placeholder="Nhập vị trí, ví dụ A01-01" autocomplete="off">
+                </div>
+                <button id="updateButton" class="btn btn-update" onclick="updateInventory()" disabled>Cập nhật</button>
+            </div>
+            <div id="status" class="status"></div>
+        </section>
+
+        <section class="card" style="padding: 0; overflow: hidden;">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><input id="selectAll" type="checkbox" onchange="toggleAll(this)" title="Chọn tất cả"></th>
+                            <th>SKU</th>
+                            <th class="number">Số carton</th>
+                            <th>Location hiện tại</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody">
+                        <tr><td colspan="4" class="empty">Chọn ngày nhập để xem danh sách SKU.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        let jobItems = [];
+
+        function setStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message || '';
+            status.className = `status ${type || ''}`;
+        }
+
+        async function loadJson(url) {
+            const response = await fetch(url);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Không thể tải dữ liệu');
+            return data;
+        }
+
+        async function loadPackingLists() {
+            const date = document.getElementById('dateRcv').value;
+            const select = document.getElementById('packingListNo');
+            select.innerHTML = '<option value="">-- Chọn Packing List --</option>';
+            setStatus('', '');
+            if (!date) { await loadJobItems(); return; }
+            try {
+                const lists = await loadJson(`/api/update-loc/by-date?date=${encodeURIComponent(date)}`);
+                if (document.getElementById('dateRcv').value !== date) return;
+                lists.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.PackinglistNo;
+                    option.textContent = `${item.PackinglistNo} | ${Number(item.total_carton) || 0} carton`;
+                    select.appendChild(option);
+                });
+                if (lists.length === 0) setStatus('Không có Packing List nào trong ngày này.', 'error');
+                else if (lists.length === 1) select.value = lists[0].PackinglistNo;
+                await loadJobItems();
+            } catch (error) {
+                setStatus(error.message, 'error');
+            }
+        }
+
+        async function loadJobItems() {
+            const jobNo = document.getElementById('packingListNo').value;
+            const body = document.getElementById('itemsBody');
+            document.getElementById('selectAll').checked = false;
+            document.getElementById('selectedInfo').textContent = '';
+            jobItems = [];
+            if (!jobNo) {
+                body.innerHTML = '<tr><td colspan="4" class="empty">Chọn ngày nhập và Packing List để xem danh sách SKU.</td></tr>';
+                return;
+            }
+            body.innerHTML = '<tr><td colspan="4" class="empty">Đang tải...</td></tr>';
+            try {
+                const items = await loadJson(`/api/update-loc/items/${encodeURIComponent(jobNo)}`);
+                if (document.getElementById('packingListNo').value !== jobNo) return;
+                jobItems = items;
+                body.innerHTML = jobItems.length ? jobItems.map((item, index) => `
+                    <tr class="${item.location ? 'has-location' : ''}">
+                        <td><input class="item-check" type="checkbox" data-index="${index}" onchange="refreshSelection()" checked></td>
+                        <td>${escapeHtml(item.sku)}</td>
+                        <td class="number">${Number(item.carton) || 0}</td>
+                        <td>${escapeHtml(item.location || '-')}</td>
+                    </tr>`).join('') : '<tr><td colspan="4" class="empty">Packing List không có SKU.</td></tr>';
+                refreshSelection();
+            } catch (error) {
+                if (document.getElementById('packingListNo').value !== jobNo) return;
+                body.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(error.message)}</td></tr>`;
+                setStatus(error.message, 'error');
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+        }
+
+        function toggleAll(source) {
+            document.querySelectorAll('.item-check').forEach(checkbox => { checkbox.checked = source.checked; });
+            refreshSelection();
+        }
+
+        function refreshSelection() {
+            const selected = document.querySelectorAll('.item-check:checked').length;
+            const hasLocation = Boolean(document.getElementById('location').value.trim());
+            document.getElementById('updateButton').disabled = selected === 0 || !hasLocation;
+            document.getElementById('selectedInfo').textContent = selected ? `Đã chọn ${selected}/${jobItems.length} SKU` : '';
+        }
+
+        async function updateInventory() {
+            const locationInput = document.getElementById('location');
+            const location = locationInput.value.trim().toUpperCase();
+            const selectedIndexes = [...document.querySelectorAll('.item-check:checked')].map(checkbox => Number(checkbox.dataset.index));
+            if (!location || selectedIndexes.length === 0) return;
+            locationInput.value = location;
+            const button = document.getElementById('updateButton');
+            button.disabled = true;
+            setStatus('Đang cập nhật...', '');
+            try {
+                const response = await fetch('/api/update-loc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ loc_id: location, packing_list_no: document.getElementById('packingListNo').value, items: selectedIndexes.map(index => ({ sku: jobItems[index].sku, carton: jobItems[index].carton })) })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Cập nhật thất bại');
+                setStatus(data.message, 'success');
+                await loadJobItems();
+            } catch (error) {
+                setStatus(error.message, 'error');
+            } finally {
+                refreshSelection();
+            }
+        }
+
+        document.getElementById('location').addEventListener('input', event => {
+            event.target.value = event.target.value.toUpperCase();
+            refreshSelection();
+        });
+        document.getElementById('dateRcv').value = new Date().toLocaleDateString('en-CA');
+        loadPackingLists();
+    </script>
+</body>
+</html>

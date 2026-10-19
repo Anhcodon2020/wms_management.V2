@@ -68,7 +68,7 @@
         <div class="header">
             <h2>📑 Quản Lý Scan Data</h2>
             <div>
-                <select id="outboundJobSelect" onchange="loadAllData()" style="padding:10px; border:1px solid #ddd; border-radius:5px; margin-right:5px; background: #fffbe6; border-color: #ffe58f;">
+                <select id="outboundJobSelect" onchange="handleJobSelection()" style="padding:10px; border:1px solid #ddd; border-radius:5px; margin-right:5px; background: #fffbe6; border-color: #ffe58f;">
                     <option value="">-- Chọn Outbound Job --</option>
                 </select>
                 <select id="palletTypeSelect" style="padding:10px; border:1px solid #ddd; border-radius:5px; margin-right:5px; background: #e6f7ff; border-color: #91d5ff;">
@@ -113,6 +113,11 @@
         </div>
 
         <div class="section-title">📋 Chi Tiết Dữ Liệu Scan</div>
+        <div id="selectedJobInfo" class="card" style="display:none; padding:12px 16px; margin-bottom:12px; color:#2c3e50;">
+            <b>Job No:</b> <span id="selectedJobNo"></span>
+            <span style="margin: 0 12px; color:#bdc3c7;">|</span>
+            <b>Tổng Carton Outbound:</b> <span id="selectedJobTotalCarton" style="font-weight:bold; color:#e67e22;"></span>
+        </div>
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -309,15 +314,57 @@
             .then(r => r.json())
             .then(data => {
                 const sel = document.getElementById('outboundJobSelect');
+                const selectedJobNo = sel.value;
                 // Giu lai option dau tien
                 sel.innerHTML = '<option value="">-- Chọn Outbound Job --</option>';
                 data.forEach(item => {
                     if (item.jobno) {
-                        sel.innerHTML += `<option value="${item.jobno}">${item.jobno}</option>`;
+                        const option = document.createElement('option');
+                        option.value = item.jobno;
+                        option.textContent = `${item.jobno} (Total Carton: ${Number(item.total_carton) || 0})`;
+                        sel.appendChild(option);
                     }
                 });
+                if (selectedJobNo && ![...sel.options].some(option => option.value === selectedJobNo)) {
+                    const option = document.createElement('option');
+                    option.value = selectedJobNo;
+                    option.textContent = selectedJobNo;
+                    sel.appendChild(option);
+                }
+                sel.value = selectedJobNo;
             })
             .catch(err => console.error('Lỗi tải Outbound Jobs:', err));
+        }
+
+        function handleJobSelection() {
+            updateSelectedJobInfo();
+            loadAllData();
+        }
+
+        async function updateSelectedJobInfo() {
+            const jobno = document.getElementById('outboundJobSelect').value;
+            const info = document.getElementById('selectedJobInfo');
+            if (!jobno) {
+                info.style.display = 'none';
+                return;
+            }
+
+            document.getElementById('selectedJobNo').textContent = jobno;
+            document.getElementById('selectedJobTotalCarton').textContent = 'Đang tải...';
+            info.style.display = 'block';
+
+            try {
+                const response = await fetch(`/api/outbound/job-summary/${encodeURIComponent(jobno)}`);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Không tải được tổng carton');
+                if (document.getElementById('outboundJobSelect').value !== jobno) return;
+                document.getElementById('selectedJobTotalCarton').textContent =
+                    Number(data.total_carton || 0).toLocaleString('vi-VN');
+            } catch (error) {
+                if (document.getElementById('outboundJobSelect').value !== jobno) return;
+                document.getElementById('selectedJobTotalCarton').textContent = 'Không tải được';
+                showToast(error.message, 'error');
+            }
         }
 
         // Load danh sach Loai Pallet tu Database (Sử dụng pallet_size)
@@ -397,8 +444,14 @@
 
         function filterByJobNo(jobNo) {
             const sel = document.getElementById('outboundJobSelect');
+            if (![...sel.options].some(option => option.value === jobNo)) {
+                const option = document.createElement('option');
+                option.value = jobNo;
+                option.textContent = jobNo;
+                sel.appendChild(option);
+            }
             sel.value = jobNo;
-            loadAllData();
+            handleJobSelection();
         }
 
         function loadAllData() {
@@ -414,6 +467,7 @@
         loadMasterDataMap(); // Quan trọng: Phải gọi hàm này để nạp dữ liệu mapping SKU
         loadOutboundJobs();
         loadPalletTypes();
+        updateSelectedJobInfo();
         loadAllData();
     </script>
 </body>

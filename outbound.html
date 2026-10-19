@@ -632,7 +632,8 @@
                         <td style="font-weight:bold; color:#2c3e50;">${job.total_carton}</td>
                         <td style="color:#27ae60; font-weight:bold;">${job.total_cbm.toFixed(3)}</td>
                         <td>
-                            <button onclick="renameJob('${job.jobno}')" class="btn-rename">🔄 Đổi tên</button>
+                            <button onclick="exportJobExcel('${job.jobno}')" class="btn-rename" style="background:#27ae60;">📤 Excel</button>
+                            <button onclick="renameJob('${job.jobno}')" class="btn-rename" style="margin-left:5px;">🔄 Đổi tên</button>
                             <button onclick="deleteJob('${job.jobno}')" class="btn-delete-action" style="margin-left:5px;">🗑️ Xóa</button>
                         </td>
                     </tr>`;
@@ -647,6 +648,22 @@
             } else if (chipboardSection) {
                 chipboardSection.style.display = 'none';
             }
+        }
+
+        function exportJobExcel(jobNo) {
+            const rows = currentData.filter(d => d.jobno === jobNo).map(d => ({
+                "Parent PO": d.parentpo || '',
+                "Child PO": d.childpo || '',
+                "RSL": d.rsl || '',
+                "SKU": d.sku || '',
+                "CBM": parseFloat(d.cbm || 0),
+                "Carton": parseFloat(d.carton || 0)
+            }));
+            if (rows.length === 0) return alert('Không có dữ liệu để xuất cho Job này!');
+            const ws = XLSX.utils.json_to_sheet(rows, { header: ["Parent PO", "Child PO", "RSL", "SKU", "CBM", "Carton"] });
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Job");
+            XLSX.writeFile(wb, `${String(jobNo).replace(/[\\/:*?"<>|]/g, '_')}.xlsx`);
         }
 
         // --- CHỨC NĂNG MỚI: ĐỔI TÊN VÀ XÓA JOB ---

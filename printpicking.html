@@ -178,23 +178,22 @@
         }
 
         async function applyInventoryLocIds(jobData) {
-            const skus = [...new Set(jobData.flatMap(job => (job.items || []).map(item => item.sku)).filter(Boolean))];
-            if (skus.length === 0) return;
+            const items = jobData.flatMap(job => job.items || []).filter(item => item.sku);
+            if (items.length === 0) return;
+            const keyOf = item => `${normalizeSku(item.parentpo)}|${normalizeSku(item.sku)}`;
 
             try {
-                const response = await fetch('/api/inventory-whs/loc-ids', {
+                const response = await fetch('/api/inbound/locations-by-po-sku', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ skus })
+                    body: JSON.stringify({ items: items.map(item => ({ po: item.parentpo, sku: item.sku })) })
                 });
-                if (!response.ok) throw new Error('Khong tai duoc loc_id tu inventory_whs');
+                if (!response.ok) throw new Error('Khong tai duoc location tu inbound');
 
                 const locMap = await response.json();
-                jobData.forEach(job => {
-                    (job.items || []).forEach(item => {
-                        const locIds = locMap[normalizeSku(item.sku)];
-                        if (locIds) item.inventory_loc_ids = locIds;
-                    });
+                items.forEach(item => {
+                    const locIds = locMap[keyOf(item)];
+                    if (locIds) item.inventory_loc_ids = locIds;
                 });
             } catch (error) {
                 console.warn(error);

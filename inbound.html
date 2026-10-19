@@ -215,9 +215,9 @@
                 </div>
                 
                 <div class="form-group"><label>Ngày Nhận (Date Rcv)</label><input type="date" id="datercv"></div>
-                <div class="form-group"><label>Packing List No</label><input type="text" id="packinglistno" oninput="updatePLTotals()"></div>
+                <div class="form-group"><label>Packing List No(*)</label><input type="text" id="packinglistno" oninput="updatePLTotals()" required></div>
 
-                <div class="form-group"><label>Số Carton (*)</label><input type="number" id="carton" oninput="calculateTotalCBM()"></div>
+                <div class="form-group"><label>Số Carton (*)</label><input type="number" id="carton" oninput="calculateTotalCBM()" required></div>
                 <div class="form-group"><label>CBM (Auto)</label><input type="number" step="0.001" id="cbm" readonly style="background-color: #f0f0f0;"></div>
                 
                 <div class="form-group"><label>Cont / Xe</label><input type="text" id="contxe"></div>
@@ -288,39 +288,12 @@
         </div>
     </div>
 
-    <!-- Modal Xac Nhan Luu -->
-    <div id="confirmModal" class="modal">
-        <div class="modal-content" style="width: 600px;">
-            <div class="modal-header">Xác Nhận Thông Tin Nhận Hàng</div>
-            <p>Vui lòng kiểm tra kế hoạch (BBR) và số lượng thực nhận:</p>
-            <div style="max-height: 300px; overflow-y: auto;">
-                <table class="summary-table">
-                    <thead>
-                        <tr>
-                            <th>Child PO (BBR)</th>
-                            <th>SL Kế Hoạch (BBR)</th>
-                            <th>SL Thực Nhận</th>
-                            <th>SL Còn Lại</th>
-                            <th>Trạng Thái</th>
-                        </tr>
-                    </thead>
-                    <tbody id="confirmTableBody"></tbody>
-                </table>
-            </div>
-            <div style="text-align: right; margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn-cancel" onclick="document.getElementById('confirmModal').style.display='none'" style="background: #95a5a6; color: white; width: auto; padding: 10px 20px;">Hủy</button>
-                <button class="btn-submit" onclick="executeSave()" style="width: auto; padding: 10px 20px; margin-top: 0;">Xác Nhận Lưu</button>
-            </div>
-        </div>
-    </div>
-
     <div id="toast" class="toast"><span id="toast-msg">Thông báo</span></div>
 
     <script>
         let searchTimeout;
         let currentData = [];
         let currentSkuList = []; // Luu danh sach SKU cua PO dang chon de lay CBM
-        let dataToSave = null; // Bien tam de luu du lieu truoc khi xac nhan
         let currentPLPage = 1;
         const rowsPerPLPage = 20;
         let sortedPLData = [];
@@ -346,8 +319,7 @@
                 // Voi Input Datalist, ta gan value truc tiep
                 document.getElementById('po').value = editData.po;
                 
-                // Ưu tiên hiển thị qty_partial nếu có giá trị
-                document.getElementById('carton').value = (editData.qty_partial !== null && editData.qty_partial !== undefined) ? editData.qty_partial : editData.carton;
+                document.getElementById('carton').value = editData.carton;
                 document.getElementById('cbm').value = editData.cbm;
                 document.getElementById('contxe').value = editData.contxe;
                 document.getElementById('labour').value = editData.labour;
@@ -498,52 +470,6 @@
         // Khi doi SKU cung tinh lai luon (neu da nhap carton)
         function updateSkuData() {
             calculateTotalCBM();
-        }
-
-        // --- CAC HAM HO TRO POPUP XAC NHAN ---
-        function updateRowStatus(input) {
-            const row = input.closest('tr');
-            const planQty = parseFloat(row.querySelector('.plan-qty').innerText) || 0;
-            const recvQty = parseFloat(input.value) || 0;
-            const partialCell = row.querySelector('.qty-partial');
-            const statusCell = row.querySelector('.status-cell');
-            
-            const remaining = Math.max(0, planQty - recvQty);
-            if (partialCell) {
-                partialCell.innerText = remaining;
-            }
-
-            let status = 'Pending';
-            let color = '#95a5a6';
-            
-            if (recvQty > 0) {
-                if (recvQty >= planQty) {
-                    status = 'Receiving';
-                    color = '#2ecc71';
-                } else {
-                    status = 'Partial';
-                    color = '#f39c12';
-                }
-            }
-            
-            statusCell.innerText = status;
-            statusCell.style.color = color;
-            
-            updateTotals();
-        }
-
-        function updateTotals() {
-            let totalPlan = 0;
-            let totalReceive = 0;
-            let totalPartial = 0;
-            document.querySelectorAll('.plan-qty').forEach(el => totalPlan += parseFloat(el.innerText) || 0);
-            document.querySelectorAll('.receive-input').forEach(el => totalReceive += parseFloat(el.value) || 0);
-            document.querySelectorAll('.qty-partial').forEach(el => totalPartial += parseFloat(el.innerText) || 0);
-            
-            document.getElementById('totalPlan').innerText = totalPlan;
-            document.getElementById('totalReceive').innerText = totalReceive;
-            const partialElem = document.getElementById('totalPartial');
-            if (partialElem) partialElem.innerText = totalPartial;
         }
 
         // Hàm hiển thị chi tiết các lần nhập của một Parent PO
@@ -700,12 +626,19 @@
 
         function saveData() {
             const id = document.getElementById('dataId').value;
+            const carton = Number(document.getElementById('carton').value);
+            if (!Number.isFinite(carton) || carton <= 0) {
+                showToast('Số Carton phải lớn hơn 0', 'error');
+                return;
+            }
+
+            calculateTotalCBM();
             const inboundData = {
                 id: id || null,
                 MANCC: document.getElementById('mancc').value,
                 po: document.getElementById('po').value,
                 sku: document.getElementById('sku').value,
-                carton: document.getElementById('carton').value,
+                carton,
                 cbm: document.getElementById('cbm').value,
                 contxe: document.getElementById('contxe').value,
                 labour: document.getElementById('labour').value,
@@ -718,119 +651,15 @@
                 return;
             }
 
-            // Luu du lieu vao bien tam
-            dataToSave = inboundData;
-
-            // Goi API de lay chi tiet BBR
-            fetch(`/api/bbr/details?parentpo=${encodeURIComponent(inboundData.po)}&sku=${encodeURIComponent(inboundData.sku)}`)
-                .then(async r => {
-                    if (!r.ok) throw new Error('Không tìm thấy dữ liệu BBR cho PO/SKU này.');
-                    return r.json();
-                })
-                .then(bbrDetails => {
-                    const confirmBody = document.getElementById('confirmTableBody');
-                    confirmBody.innerHTML = '';
-
-                    if (bbrDetails.length === 0) {
-                        // Neu khong co ke hoach, van cho phep luu nhung hien thong bao
-                        confirmBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Không tìm thấy kế hoạch trên BBR cho SKU này.</td></tr>`;
-                    } else {
-                        bbrDetails.forEach((bbrItem, index) => {
-                            const plannedQty = parseFloat(bbrItem.qty);
-                            // Tự động gán số lượng thực nhận bằng số lượng kế hoạch từ BBR
-                            const receivingQty = plannedQty; 
-                            const remainingQty = Math.max(0, plannedQty - receivingQty);
-
-                            confirmBody.innerHTML += `
-                                <tr>
-                                    <td>${bbrItem.po}</td>
-                                    <td class="plan-qty">${plannedQty}</td>
-                                    <td><input type="number" class="receive-input" value="${receivingQty}" oninput="updateRowStatus(this)"></td>
-                                    <td class="qty-partial" style="font-weight: bold; color: #e67e22;">${remainingQty}</td>
-                                    <td class="status-cell" style="font-weight: bold; color: #2ecc71;">Receiving</td>
-                                </tr>
-                            `;
-                        });
-                        
-                        // Them dong tong cong
-                        confirmBody.innerHTML += `
-                            <tr>
-                                <td style="text-align:right;">Tổng cộng:</td>
-                                <td id="totalPlan">0</td>
-                                <td id="totalReceive" style="color:#d35400;">0</td>
-                                <td id="totalPartial" style="color:#e67e22; font-weight:bold;">0</td>
-                                <td></td>
-                            </tr>`;
-                        
-                        // Cap nhat tong lan dau
-                        updateTotals();
-                    }
-                    
-                    document.getElementById('confirmModal').style.display = 'flex';
-                })
-                .catch(e => {
-                    // Neu co loi (vd: 404), van cho phep luu nhung hien popup canh bao
-                    const confirmBody = document.getElementById('confirmTableBody');
-                    confirmBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">${e.message}</td></tr>`;
-                    document.getElementById('confirmModal').style.display = 'flex';
-                });
-        }
-
-        function executeSave() {
-            if (!dataToSave) {
-                showToast('Không có dữ liệu để lưu', 'error');
-                return;
-            }
-
-            // CAP NHAT LAI SO LUONG TU POPUP (Neu co)
-            const totalRecvElem = document.getElementById('totalReceive');
-            if (totalRecvElem) {
-                const total = parseFloat(totalRecvElem.innerText) || 0;
-                if (total > 0) {
-                    dataToSave.carton = total;
-                    
-                    // Tinh lai CBM theo so luong thuc nhan moi
-                    const skuValue = document.getElementById('sku').value.trim().toLowerCase();
-                    const skuData = currentSkuList.find(item =>
-                        String(item.item || '').trim().toLowerCase() === skuValue
-                    );
-                    const unitCbm = skuData ? (parseFloat(skuData.cbm) || 0) : 0;
-                    dataToSave.cbm = (unitCbm * total).toFixed(3);
-                }
-            }
-
-            // --- THU THAP TRANG THAI BBR DE CAP NHAT ---
-            const bbrUpdates = [];
-            const rows = document.querySelectorAll('#confirmTableBody tr');
-            rows.forEach(row => {
-                // Chi xu ly cac dong co input (bo qua dong tong cong hoac dong thong bao loi)
-                const input = row.querySelector('.receive-input');
-                if (!input) return;
-                
-                const cells = row.querySelectorAll('td');
-                const childPo = cells[0].innerText; // Cot dau tien la Child PO
-                const status = row.querySelector('.status-cell').innerText;
-                const recvQty = parseFloat(input.value) || 0;
-
-                if (status === 'Receiving' || status === 'Partial') {
-                    bbrUpdates.push({ po: childPo, item: dataToSave.sku, status: status, qty_partial: recvQty });
-                }
-            });
-            dataToSave.bbrUpdates = bbrUpdates;
-
             fetch('/api/inbound', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(dataToSave)
+                body: JSON.stringify(inboundData)
             }).then(async r => {
                 if (!r.ok) throw new Error((await r.json()).error || 'Lỗi server');
                 showToast('Lưu thành công!');
-                document.getElementById('confirmModal').style.display = 'none'; // Dong popup xac nhan
-                // closeModal(); // GIU LAI MODAL FORM NHAP KHO THEO YEU CAU
                 loadData();
             }).catch(e => showToast(e.message, 'error'));
-
-            dataToSave = null; // Reset bien tam
         }
 
         // --- LOGIC SUA PACKING LIST ---

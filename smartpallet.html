@@ -270,11 +270,11 @@
                         <label>Chế độ đề xuất loại pallet</label>
                         <select id="recommendMode">
                             <option value="auto">Tự động chọn loại pallet tối ưu</option>
-                            <option value="fixed">Chỉ dùng loại pallet đã chọn</option>
+                            <option value="fixed">Fixed pallet: giữ đúng số lượng đã nhập</option>
                         </select>
                     </div>
                     <div>
-                        <label>Loại pallet cố định (nếu chọn chế độ "Chỉ dùng loại pallet")</label>
+                        <label>Loại pallet tham chiếu khi đề xuất nâng cấp</label>
                         <select id="fixedPalletType">
                             <option value="p12">Pallet 1.2m</option>
                             <option value="p16">Pallet 1.6m</option>
@@ -295,6 +295,10 @@
                     <div>
                         <label>Chiều cao tối đa cho phép (mm)</label>
                         <input type="number" id="maxHeightLimit" value="2550" min="1000" max="3000" step="10" title="Đặt giới hạn chiều cao tối đa mà hệ thống có thể xếp hàng (bao gồm cả pallet)">
+                    </div>
+                    <div>
+                        <label>Tải trọng tối đa pallet (kg, 0 = không giới hạn)</label>
+                        <input type="number" id="maxPalletWeight" value="2000" min="0" step="10" title="Giới hạn tổng trọng lượng carton trên mỗi pallet">
                     </div>
                 </div>
                 <div class="row">
@@ -386,7 +390,7 @@
             <div id="unplannedCard" class="card hidden error">
                 <h2>⚠️ Hàng Chưa Xếp Được</h2>
                 <div id="unplannedList" class="note"></div>
-            </div
+            </div>
         </main>
     </div>
 
@@ -1414,11 +1418,12 @@
          * @param {string} sideLayMode Chế độ ốp carton.
          * @returns Đối tượng lớp đã xây dựng.
          */
-        function buildMixedLayer(pallet, groups, targetHeight, startZ, sideLayMode = 'off') {
+        function buildMixedLayer(pallet, groups, targetHeight, startZ, sideLayMode = 'off', maxPalletWeight = 0, loadedWeight = 0) {
             const sim = groups.map(g => ({ ...g })); // Sao chép nhóm để mô phỏng
             let freeRects = [{ x: 0, y: 0, width: pallet.width, length: pallet.length }]; // Không gian trống ban đầu là toàn bộ mặt pallet
             const placements = []; // Các vị trí đặt carton trong lớp
             let loadedCbm = 0;
+            let loadedWeight = 0;
             let cartons = 0;
             let guard = 0; // Biến bảo vệ để tránh vòng lặp vô hạn
 
@@ -1430,6 +1435,8 @@
                     getOrientations(g, pallet, sideLayMode).filter(o => o.height === targetHeight).forEach(o => {
                         freeRects.forEach((rect, rectIndex) => {
                             if (o.width > rect.width || o.length > rect.length) return; // Không vừa
+                            const cartonWeight = Number(g.weight) || 0;
+                            if (maxPalletWeight > 0 && loadedWeight + cartonWeight > maxPalletWeight) return;
                             const area = o.width * o.length; // Diện tích carton
                             const rectArea = rect.width * rect.length; // Diện tích vùng trống
                             const residualW = rect.width - o.width; // Phần dư chiều rộng
@@ -1469,6 +1476,7 @@
                 });
                 best.group.remaining -= 1; // Giảm số lượng còn lại của SKU
                 loadedCbm += best.group.unitCbm;
+                loadedWeight += Number(best.group.weight) || 0;
                 cartons += 1;
                 const selectedRect = freeRects[best.rectIndex];
                 freeRects.splice(best.rectIndex, 1, ...splitFreeRect(selectedRect, used)); // Cập nhật vùng trống
@@ -1483,6 +1491,7 @@
                 placements,
                 freeRects,
                 loadedCbm,
+                loadedWeight,
                 cartons,
                 surfaceUse: surfaceUsed / Math.max(pallet.width * pallet.length, 1)
             };
@@ -1592,6 +1601,7 @@
             const valid = candidates.filter(c => c.cartons > 0);
             if (!valid.length) return null;
             return valid.sort((a, b) => {
+                if (Math.abs(b.loadedCbm - a.loadedCbm) > 0.000001) return b.loadedCbm - a.loadedCbm;
                 if (strategy === 'best_fill') {
                     if (b.fillRate !== a.fillRate) return b.fillRate - a.fillRate;
                     return b.loadedCbm - a.loadedCbm;
@@ -1628,17 +1638,18 @@
          * @param {string} sideLayMode Chế độ ốp carton.
          * @returns Đối tượng ứng viên pallet.
          */
-        function buildCandidateMixed(pallet, groupRows, sideLayMode = 'off') {
+        function buildCandidateMixed(pallet, groupRows, sideLayMode = 'off', maxPalletWeight = 0) {
             const groups = cloneGroups(groupRows);
             const layers = [];
             let usedHeight = 0;
             let loadedCbm = 0;
+            let loadedWeight = 0;
             let cartons = 0;
 
             while (usedHeight < pallet.maxHeight) {
                 const remainingHeight = pallet.maxHeight - usedHeight;
                 const best = getLayerHeightOptions(groups, pallet, remainingHeight, sideLayMode)
-                    .map(height => buildMixedLayer(pallet, groups, height, usedHeight, sideLayMode))
+                    .map(height => buildMixedLayer(pallet, groups, height, usedHeight, sideLayMode, maxPalletWeight, loadedWeight))
                     .filter(layer => layer.cartons > 0)
                     .sort((a, b) => {
                         if (b.surfaceUse !== a.surfaceUse) return b.surfaceUse - a.surfaceUse;
@@ -1680,6 +1691,7 @@
                 });
                 usedHeight += best.height;
                 loadedCbm += best.loadedCbm;
+                loadedWeight += best.loadedWeight || 0;
                 cartons += best.cartons;
             }
 
@@ -1691,6 +1703,7 @@
                 layers,
                 usedHeight,
                 loadedCbm,
+                totalWeight: loadedWeight,
                 cartons,
                 remaining,
                 fillRate: pallet.baseCbm > 0 ? (loadedCbm / pallet.baseCbm) * 100 : 0,
@@ -1731,7 +1744,7 @@
          * @param {string} sideLayMode Chế độ ốp carton.
          * @returns Đối tượng chứa các pallet đã xếp và các hàng hóa chưa xếp được.
          */
-        function optimizeGroup(groupKey, groupRows, available, strategy, allowedPalletIds = null, sideLayMode = 'off', userMaxHeight = 2640, sizeIncrease = { length: 0, width: 0 }) {
+        function optimizeGroup(groupKey, groupRows, available, strategy, allowedPalletIds = null, sideLayMode = 'off', userMaxHeight = 2640, sizeIncrease = { length: 0, width: 0 }, maxPalletWeight = 0) {
             const groups = cloneGroups(groupRows);
             const pallets = [];
             const unplanned = [];
@@ -1746,7 +1759,7 @@
                     .map(p => {
                         // Áp dụng giới hạn chiều cao và phần tăng kích thước mặt pallet do người dùng chọn.
                         const tempPallet = applyPalletOverrides(p, userMaxHeight, sizeIncrease);
-                        return buildCandidateMixed(tempPallet, expandedRows, sideLayMode);
+                        return buildCandidateMixed(tempPallet, expandedRows, sideLayMode, maxPalletWeight);
                     });
                 const best = chooseCandidate(candidates, strategy);
                 if (!best) break;
@@ -1766,6 +1779,35 @@
             return { pallets, unplanned };
         }
 
+        function createEmptyPalletRecord(pallet, groupKey = 'Fixed') {
+            return {
+                pallet,
+                layers: [],
+                usedHeight: 0,
+                loadedCbm: 0,
+                totalWeight: 0,
+                cartons: 0,
+                remaining: 0,
+                fillRate: 0,
+                maxFillRate: 0,
+                heightUseRate: 0,
+                avgSurfaceUse: 0,
+                minSurfaceUse: 0,
+                heightIncreasePct: 0,
+                empty: true,
+                groupKey
+            };
+        }
+
+        function appendFixedEmptyPallets(pallets, requested, sizeIncrease, userMaxHeight) {
+            PALLETS.forEach(basePallet => {
+                const existing = pallets.filter(item => item.pallet.id === basePallet.id).length;
+                const missing = Math.max(0, (requested[basePallet.id] || 0) - existing);
+                const pallet = applyPalletOverrides(basePallet, userMaxHeight, sizeIncrease);
+                for (let i = 0; i < missing; i++) pallets.push(createEmptyPalletRecord(pallet));
+            });
+        }
+
         /**
          * Bắt đầu quá trình tối ưu hóa pallet.
          */
@@ -1781,13 +1823,17 @@
             const fixedPalletType = document.getElementById('fixedPalletType')?.value || 'p12';
             const sideLayMode = document.getElementById('autoSideLayMode')?.value || 'off';
             const userMaxHeight = Math.max(1000, Math.floor(toNumber(document.getElementById('maxHeightLimit').value || 2550)));
+            const maxPalletWeight = Math.max(0, toNumber(document.getElementById('maxPalletWeight')?.value || 0));
             const sizeIncrease = getPalletSizeIncrease();
-            const allowedPalletIds = recommendMode === 'fixed' ? [fixedPalletType] : null;
             const available = {
                 p12: Math.max(0, Math.floor(toNumber(document.getElementById('qty_p12').value))),
                 p16: Math.max(0, Math.floor(toNumber(document.getElementById('qty_p16').value))),
                 p19: Math.max(0, Math.floor(toNumber(document.getElementById('qty_p19').value)))
             };
+            const requestedPallets = { ...available };
+            const allowedPalletIds = recommendMode === 'fixed'
+                ? PALLETS.filter(p => available[p.id] > 0).map(p => p.id)
+                : null;
 
             const loose = [];
             const palletRows = [];
@@ -1815,16 +1861,66 @@
             const allUnplanned = [];
             let allFloatingCartons = []; // Thêm mảng để lưu trữ tất cả các carton lơ lửng
             [...groupsMap.entries()].forEach(([key, groupRows]) => {
-                const result = optimizeGroup(key, groupRows, available, strategy, allowedPalletIds, sideLayMode, userMaxHeight, sizeIncrease);
+                const result = optimizeGroup(key, groupRows, available, strategy, allowedPalletIds, sideLayMode, userMaxHeight, sizeIncrease, maxPalletWeight);
                 allPallets.push(...result.pallets);
                 allUnplanned.push(...result.unplanned);
             });
 
-            lastPlan = { pallets: allPallets, loose, unplanned: allUnplanned, floatingCartons: allFloatingCartons, available, recommendMode, fixedPalletType, sideLayMode, userMaxHeight, sizeIncrease };
+            if (recommendMode === 'fixed') appendFixedEmptyPallets(allPallets, requestedPallets, sizeIncrease, userMaxHeight);
+
+            lastPlan = { pallets: allPallets, loose, unplanned: allUnplanned, floatingCartons: allFloatingCartons, available, requestedPallets, recommendMode, fixedPalletType, sideLayMode, userMaxHeight, sizeIncrease, maxPalletWeight };
             refreshPlanTotals(lastPlan);
             renderPlan(lastPlan);
             updateKpis(lastPlan);
             setStatus(`Đã tối ưu ${allPallets.length} pallet. Loose carton: ${loose.reduce((s, r) => s + r.qty, 0)} carton.`);
+        }
+
+        function validatePlan(plan) {
+            const errors = [];
+            let allocatedCartons = 0;
+            plan.pallets.forEach((palletPlan, palletIndex) => {
+                const placementsByLayer = [];
+                palletPlan.layers.forEach((layer, layerIndex) => {
+                    const placements = layer.placements || [];
+                    allocatedCartons += placements.length || layer.qty || 0;
+                    placements.forEach((placement, placementIndex) => {
+                        const inBounds = placement.x >= 0 && placement.y >= 0 &&
+                            placement.x + placement.width <= palletPlan.pallet.width &&
+                            placement.y + placement.length <= palletPlan.pallet.length;
+                        const inHeight = (layer.startZ || 0) + placement.height <= palletPlan.pallet.maxHeight;
+                        if (!inBounds) errors.push(`Pallet ${palletIndex + 1}, Layer ${layerIndex + 1}: overhang tại SKU ${placement.sku}.`);
+                        if (!inHeight) errors.push(`Pallet ${palletIndex + 1}, Layer ${layerIndex + 1}: vượt chiều cao tại SKU ${placement.sku}.`);
+                        for (let previousIndex = 0; previousIndex < placementIndex; previousIndex++) {
+                            if (boxesOverlap2D(placement, placements[previousIndex])) {
+                                errors.push(`Pallet ${palletIndex + 1}, Layer ${layerIndex + 1}: collision giữa các carton.`);
+                                break;
+                            }
+                        }
+                    });
+                    placementsByLayer.push(placements);
+                });
+                const weight = Number(palletPlan.totalWeight) || 0;
+                if (plan.maxPalletWeight > 0 && weight > plan.maxPalletWeight + 0.0001) {
+                    errors.push(`Pallet ${palletIndex + 1}: vượt tải trọng ${fmt(weight, 1)}/${fmt(plan.maxPalletWeight, 1)} kg.`);
+                }
+            });
+
+            const totalCartons = rows.reduce((sum, row) => sum + row.qty, 0);
+            const looseCartons = plan.loose.reduce((sum, item) => sum + item.qty, 0);
+            const unplannedCartons = plan.unplanned.reduce((sum, item) => sum + item.qty, 0);
+            const accountedCartons = allocatedCartons + looseCartons + unplannedCartons;
+            if (accountedCartons !== totalCartons) {
+                errors.push(`Accounting lệch: tổng ${totalCartons}, đã phân loại ${accountedCartons} carton.`);
+            }
+            return {
+                valid: errors.length === 0,
+                errors,
+                totalCartons,
+                allocatedCartons,
+                looseCartons,
+                unplannedCartons,
+                accountedCartons
+            };
         }
 
         /**
@@ -1837,12 +1933,13 @@
             const totalWeight = plan.pallets.reduce((sum, p) => sum + (Number(p.totalWeight) || 0), 0);
             const totalFloatingCartons = plan.floatingCartons.length; // Lấy tổng số carton lơ lửng
             const avgFill = plan.pallets.length ? plan.pallets.reduce((sum, p) => sum + p.fillRate, 0) / plan.pallets.length : 0;
+            const validation = plan.validation || validatePlan(plan);
             const byType = PALLETS.map(p => {
                 const count = plan.pallets.filter(x => x.pallet.id === p.id).length;
                 return `${p.name}: ${count}`;
             }).join(' | ');
             const modeText = plan.recommendMode === 'fixed'
-                ? `Chế độ cố định pallet: ${PALLETS.find(p => p.id === plan.fixedPalletType)?.name || plan.fixedPalletType}.`
+                ? `Fixed pallet: giữ đúng ${Object.values(plan.requestedPallets || {}).reduce((sum, qty) => sum + qty, 0)} pallet đã nhập.`
                 : 'Chế độ tự động chọn pallet tối ưu.';
             const sideModeText = plan.sideLayMode && plan.sideLayMode !== 'off'
                 ? `Ốp carton: ${plan.sideLayMode === 'auto' ? 'tự động chọn chiều ốp tốt nhất' : plan.sideLayMode === 'horizontal' ? 'chiều ngang' : 'chiều dọc'}.`
@@ -1857,6 +1954,9 @@
                 <span class="pill blue">${modeText}</span>
                 <span class="pill blue">${sideModeText}</span>
                 <div style="margin-top:8px">${byType}. Pallet được phép tăng chiều cao từ 2400 mm lên tối đa ${plan.userMaxHeight} mm khi cần. Mặt pallet tăng L+${plan.sizeIncrease?.length || 0}mm / W+${plan.sizeIncrease?.width || 0}mm.</div>
+                <div class="pill ${validation.valid ? 'green' : 'red'}" style="margin-top:8px;">${validation.valid ? '✓ Validation đạt' : `⚠️ Validation lỗi: ${validation.errors.length}`}</div>
+                <div class="note" style="margin-top:6px;">Accounting: ${validation.allocatedCartons} allocated + ${validation.looseCartons} loose + ${validation.unplannedCartons} unallocated = ${validation.accountedCartons}/${validation.totalCartons} carton.</div>
+                ${validation.errors.length ? `<div class="error" style="margin-top:6px; padding:8px">${validation.errors.slice(0, 5).map(escapeHtml).join('<br>')}</div>` : ''}
                 ${totalFloatingCartons > 0 ? `<div class="pill red" style="margin-top:8px;">⚠️ Có ${totalFloatingCartons} carton bị treo lơ lửng!</div>` : ''}
                 ${renderFdcTotals(rows)}
             `;
@@ -2116,7 +2216,6 @@
                                 <tbody>${summaryRows}</tbody>
                             </table>
                         </div>
-                        ${floatingWarning}
                     </div>`;
             }
 
@@ -3047,8 +3146,10 @@
                 "Filling chuẩn %": Number(p.fillRate.toFixed(1))
             }));
             const layerRows = [];
+            const placementRows = [];
             lastPlan.pallets.forEach((p, pIndex) => {
-                p.layers.forEach(layer => layerRows.push({
+                p.layers.forEach(layer => {
+                    layerRows.push({
                     "Pallet": pIndex + 1,
                     "Lớp": layer.no,
                     "SKU": layer.sku,
@@ -3060,7 +3161,24 @@
                     "Z đến": layer.endZ,
                     "CBM": Number(layer.cbm.toFixed(3)),
                     "Hướng dẫn": layer.instruction
-                }));
+                    });
+                    (layer.placements || []).forEach((placement, cartonIndex) => placementRows.push({
+                        "Pallet": pIndex + 1,
+                        "SKU": placement.sku,
+                        "FDC": placement.fdc,
+                        "Carton ID": `${placement.rowId || placement.sku}-${cartonIndex + 1}`,
+                        "Layer": layer.no,
+                        "X": placement.x,
+                        "Y": placement.y,
+                        "Z": layer.startZ || 0,
+                        "Length": placement.length,
+                        "Width": placement.width,
+                        "Height": placement.height,
+                        "Weight": Number(placement.weight || 0),
+                        "CBM": Number(Number(placement.cbm || 0).toFixed(6)),
+                        "Rotation": placement.orientationText || ''
+                    }));
+                });
             });
             const looseRows = lastPlan.loose.map(r => ({
                 "SKU": r.sku,
@@ -3072,6 +3190,7 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Pallet Summary');
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(layerRows), 'Layer Guide');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(placementRows), 'Carton Position');
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(looseRows), 'Loose Carton');
             XLSX.writeFile(wb, `smart_pallet_plan_${new Date().toISOString().slice(0,10)}.xlsx`);
         }

@@ -106,6 +106,14 @@ connection.connect((err) => {
       }
     });
 
+    // Tự động thêm cột location vào bảng inbound
+    connection.query("SHOW COLUMNS FROM inbound LIKE 'location'", (err, results) => {
+      if (!err && results.length === 0) {
+        console.log("🛠️ Phat hien thieu cot 'location' trong inbound. Dang tu dong them...");
+        connection.query("ALTER TABLE inbound ADD COLUMN location VARCHAR(50) DEFAULT NULL");
+      }
+    });
+
     // Tự động kiểm tra và thêm cột hub_DC vào bảng bbrreport
     connection.query("SHOW COLUMNS FROM bbrreport LIKE 'hub_DC'", (err, results) => {
       if (!err && results.length === 0) {
@@ -184,7 +192,16 @@ connection.connect((err) => {
       )`;
     connection.query(createInventoryTable, (err) => {
       if (err) console.error("❌ [LOI] Không thể khởi tạo bảng inventory_whs:", err.message);
-      else console.log("✅ [THANH CONG] Đảm bảo bảng inventory_whs đã tồn tại!");
+            else {
+                console.log("✅ [THANH CONG] Đảm bảo bảng inventory_whs đã tồn tại!");
+                connection.query("SHOW COLUMNS FROM inventory_whs LIKE 'date_update'", (columnErr, columns) => {
+                    if (!columnErr && columns.length === 0) {
+                        connection.query("ALTER TABLE inventory_whs ADD COLUMN date_update DATETIME DEFAULT NULL", alterErr => {
+                            if (alterErr) console.error("❌ [LOI] Không thể thêm cột date_update:", alterErr.message);
+                        });
+                    }
+                });
+            }
     });
   }
 });
@@ -270,6 +287,17 @@ app.get(['/inbound', '/inbound.html'], (req, res) => {
     }
     res.send(data);
   });
+});
+
+// --- ROUTE: Trang cập nhật vị trí tồn kho theo Packing List ---
+app.get(['/UpdateLoc', '/UpdateLoc.html'], (req, res) => {
+    fs.readFile(__dirname + '/UpdateLoc.html', 'utf8', (err, data) => {
+        if (err) {
+            res.send('<h1>Lỗi 404: Không tìm thấy file UpdateLoc.html</h1>');
+            return;
+        }
+        res.send(data);
+    });
 });
 
 // --- ROUTE MOI: Trang Xuat Kho (Outbound) ---
@@ -697,6 +725,10 @@ app.post('/api/bbr/import', async (req, res) => {
                 const parentpo = row['PARENT PO'] ? String(row['PARENT PO']).trim() : '';
                 const hub_dc = row['HUB DC'] || row['hub_dc'] || row['ToHubDC_ID'] || '';
                 const deliveryDate = parseImportDeliveryDate(row['DELIVERY DT']);
+                const origin = row['Origin'] || row['origin'] || '';
+                const supplier = row['VNDR CD'] || '';
+                const cbm = parseFloat(row['MC CBM'] || 0);
+                const status = row.status || 'New';
                 
                 if (!po || !item) {
                     errors.push({ row: index + 2, error: "Thiếu PO hoặc Item", po, item });
@@ -717,18 +749,14 @@ app.post('/api/bbr/import', async (req, res) => {
                 if (existing.length > 0) {
                     // --- CASE 1: UPDATE ---
                     await connection.promise().query(
-                        'UPDATE bbrreport SET qty = ?, deliverydate = COALESCE(?, deliverydate) WHERE id = ?',
-                        [finalQty, deliveryDate, existing[0].id]
+                        'UPDATE bbrreport SET origin = ?, supplier = ?, qty = ?, cbm = ?, deliverydate = COALESCE(?, deliverydate), hub_DC = ?, status = ? WHERE id = ?',
+                        [origin, supplier, finalQty, cbm, deliveryDate, hub_dc, status, existing[0].id]
                     );
                     updatedCount++;
                 } else {
                     // --- CASE 2: INSERT MOI ---
-                    const origin = row['Origin'] || row['origin'] || '';
-                    const supplier = row['VNDR CD'] || ''; // Mapping VNDR CD -> supplier
-                    const cbm = parseFloat(row['MC CBM'] || 0);
-
-                    const sql = `INSERT INTO bbrreport (po, item, parentpo, origin, supplier, qty, cbm, deliverydate, hub_DC, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'New')`;
-                    await connection.promise().query(sql, [po, item, parentpo, origin, supplier, finalQty, cbm, deliveryDate, hub_dc]);
+                    const sql = `INSERT INTO bbrreport (po, item, parentpo, origin, supplier, qty, cbm, deliverydate, hub_DC, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                    await connection.promise().query(sql, [po, item, parentpo, origin, supplier, finalQty, cbm, deliveryDate, hub_dc, status]);
                     insertedCount++;
                 }
             } catch (rowErr) {
@@ -858,12 +886,10 @@ app.get('/api/inbound', (req, res) => {
         SELECT i.*, 
                MAX(n.TENNCC) as TENNCC, 
                MAX(n.name_doc) as name_doc, 
-               MAX(m.cartonperpallet) as cartonperpallet,
-               MAX(b.qty_partial) as qty_partial
+               MAX(m.cartonperpallet) as cartonperpallet
         FROM inbound i 
         LEFT JOIN nhacungcap n ON i.MANCC = n.MANCC 
-        LEFT JOIN masterdata m ON i.sku = m.sku
-        LEFT JOIN bbrreport b ON i.po = b.parentpo AND i.sku = b.item`;
+        LEFT JOIN masterdata m ON i.sku = m.sku`;
     let params = [];
     let conditions = [];
 
@@ -897,15 +923,6 @@ app.post('/api/inbound', (req, res) => {
     }
     connection.query(sql, v, (err) => { 
         if (err) return res.status(500).json({ error: err.message }); 
-
-        // --- CAP NHAT TRANG THAI NGUOC LAI VAO BBR REPORT ---
-        if (d.bbrUpdates && Array.isArray(d.bbrUpdates)) {
-            d.bbrUpdates.forEach(u => {
-                // Cap nhat status cho tung Child PO
-                connection.query('UPDATE bbrreport SET status = ?, qty_partial = ? WHERE po = ? AND item = ?', [u.status, u.qty_partial, u.po, u.item]);
-            });
-        }
-
         res.json({ message: 'Lưu thành công!' }); 
     });
 });
@@ -971,6 +988,122 @@ app.get('/api/inbound/dropdown/items', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });
+});
+
+// --- API: Cập nhật vị trí tồn kho theo Job No ---
+app.get('/api/update-loc/packinglists', (req, res) => {
+    const sql = `
+        SELECT PackinglistNo, MIN(datercv) AS datercv,
+               SUM(COALESCE(carton, 0)) AS total_carton,
+               COUNT(DISTINCT sku) AS sku_count
+        FROM inbound
+        WHERE PackinglistNo IS NOT NULL AND TRIM(PackinglistNo) <> ''
+        GROUP BY PackinglistNo
+        ORDER BY datercv DESC, PackinglistNo ASC`;
+    connection.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.get('/api/update-loc/packinglists/:packingListNo', (req, res) => {
+    const sql = `
+        SELECT sku, SUM(COALESCE(carton, 0)) AS carton, MIN(datercv) AS datercv
+        FROM inbound
+        WHERE PackinglistNo = ? AND sku IS NOT NULL AND TRIM(sku) <> ''
+        GROUP BY sku
+        ORDER BY sku ASC`;
+    connection.query(sql, [req.params.packingListNo], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.get('/api/update-loc/by-date', (req, res) => {
+    const date = String(req.query.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Ngày nhập không hợp lệ' });
+    const sql = `
+        SELECT TRIM(PackinglistNo) AS PackinglistNo,
+               SUM(COALESCE(carton, 0)) AS total_carton,
+               COUNT(DISTINCT sku) AS sku_count
+        FROM inbound
+        WHERE DATE(datercv) = ? AND PackinglistNo IS NOT NULL AND TRIM(PackinglistNo) <> ''
+        GROUP BY TRIM(PackinglistNo)
+        ORDER BY TRIM(PackinglistNo) ASC`;
+    connection.query(sql, [date], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.get('/api/update-loc/items/:packingListNo', (req, res) => {
+    const sql = `
+        SELECT sku, SUM(COALESCE(carton, 0)) AS carton,
+               GROUP_CONCAT(DISTINCT NULLIF(TRIM(location), '') ORDER BY TRIM(location) ASC SEPARATOR ', ') AS location
+        FROM inbound
+        WHERE TRIM(PackinglistNo) = ? AND sku IS NOT NULL AND TRIM(sku) <> ''
+        GROUP BY sku
+        ORDER BY sku ASC`;
+    connection.query(sql, [req.params.packingListNo.trim()], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+app.get('/api/update-loc/locations', (req, res) => {
+    connection.query(
+        "SELECT DISTINCT loc_id FROM location WHERE loc_id IS NOT NULL AND TRIM(CAST(loc_id AS CHAR)) <> '' ORDER BY loc_id ASC",
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(results);
+        }
+    );
+});
+
+app.post('/api/update-loc', async (req, res) => {
+    const locId = String(req.body.loc_id || '').trim().toUpperCase();
+    const packingListNo = String(req.body.packing_list_no || '').trim();
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+    const validItems = items
+        .map(item => ({ sku: String(item.sku || '').trim(), carton: Number(item.carton) }))
+        .filter(item => item.sku && Number.isFinite(item.carton) && item.carton >= 0);
+
+    if (!locId) return res.status(400).json({ error: 'Thiếu loc_id' });
+    if (validItems.length === 0) return res.status(400).json({ error: 'Không có SKU hợp lệ để cập nhật' });
+
+    const db = connection.promise();
+    try {
+        await db.beginTransaction();
+        for (const item of validItems) {
+            if (packingListNo) {
+                await db.query(
+                    'UPDATE inbound SET location = ? WHERE TRIM(PackinglistNo) = ? AND TRIM(sku) = ?',
+                    [locId, packingListNo, item.sku]
+                );
+            }
+            const [existing] = await db.query(
+                'SELECT id FROM inventory_whs WHERE sku = ? AND loc_id = ? LIMIT 1',
+                [item.sku, locId]
+            );
+            if (existing.length) {
+                await db.query(
+                    'UPDATE inventory_whs SET qty = ?, date_update = NOW() WHERE sku = ? AND loc_id = ?',
+                    [item.carton, item.sku, locId]
+                );
+            } else {
+                await db.query(
+                    'INSERT INTO inventory_whs (sku, loc_id, qty, date_update) VALUES (?, ?, ?, NOW())',
+                    [item.sku, locId, item.carton]
+                );
+            }
+        }
+        await db.commit();
+        res.json({ message: `Đã cập nhật ${validItems.length} SKU vào vị trí ${locId}.` });
+    } catch (err) {
+        try { await db.rollback(); } catch (rollbackErr) { console.error('Rollback inventory_whs lỗi:', rollbackErr.message); }
+        console.error('❌ [API ERROR] POST /api/update-loc:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // --- API: Quan ly Xuat Kho (Outbound) ---
@@ -1075,6 +1208,32 @@ app.post('/api/inventory-whs/loc-ids', async (req, res) => {
         res.json(locMap);
     } catch (err) {
         console.error('[API ERROR] POST /api/inventory-whs/loc-ids:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Lay location tu inbound theo PO + SKU (parentpo+sku cua outbound map po+sku cua inbound)
+app.post('/api/inbound/locations-by-po-sku', async (req, res) => {
+    const pairs = Array.isArray(req.body.items) ? req.body.items : [];
+    const norm = value => String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+    const keys = [...new Set(pairs.map(p => `${norm(p.po)}|${norm(p.sku)}`).filter(k => k !== '|'))];
+    if (keys.length === 0) return res.json({});
+    try {
+        const expr = "CONCAT(LOWER(REPLACE(TRIM(CAST(po AS CHAR)), ' ', '')), '|', LOWER(REPLACE(TRIM(CAST(sku AS CHAR)), ' ', '')))";
+        const [rows] = await connection.promise().query(
+            `SELECT ${expr} AS k,
+                    GROUP_CONCAT(DISTINCT TRIM(location) ORDER BY TRIM(location) ASC SEPARATOR ', ') AS locations
+             FROM inbound
+             WHERE location IS NOT NULL AND TRIM(location) <> ''
+               AND ${expr} IN (${keys.map(() => '?').join(',')})
+             GROUP BY ${expr}`,
+            keys
+        );
+        const map = {};
+        rows.forEach(r => { map[r.k] = r.locations; });
+        res.json(map);
+    } catch (err) {
+        console.error('[API ERROR] POST /api/inbound/locations-by-po-sku:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1333,19 +1492,40 @@ app.delete('/api/importshipment/shipment/:shipmentorder', (req, res) => {
     });
 });
 
-// --- API: Lay danh sach Job No chua co so Container tu Outbound ---
+// --- API: Lay danh sach Job No ma tat ca dong Outbound deu chua co Container ---
 app.get('/api/outbound/dropdown/jobs-no-cont', (req, res) => {
     const sql = `
-        SELECT DISTINCT jobno
+        SELECT TRIM(jobno) AS jobno, COALESCE(SUM(carton), 0) AS total_carton
         FROM outbound
         WHERE jobno IS NOT NULL
           AND TRIM(jobno) <> ''
-          AND (container IS NULL OR TRIM(container) = '')
-        ORDER BY jobno DESC
+        GROUP BY TRIM(jobno)
+        HAVING SUM(
+            CASE
+                WHEN NULLIF(TRIM(COALESCE(container, '')), '') IS NOT NULL THEN 1
+                ELSE 0
+            END
+        ) = 0
+        ORDER BY TRIM(jobno) DESC
     `;
     connection.query(sql, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results);
+    });
+});
+
+app.get('/api/outbound/job-summary/:jobno', (req, res) => {
+    const jobno = String(req.params.jobno || '').trim();
+    if (!jobno) return res.status(400).json({ error: 'Thiếu Job No' });
+
+    const sql = `
+        SELECT TRIM(jobno) AS jobno, COALESCE(SUM(carton), 0) AS total_carton
+        FROM outbound
+        WHERE TRIM(jobno) = ?
+        GROUP BY TRIM(jobno)`;
+    connection.query(sql, [jobno], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results[0] || { jobno, total_carton: 0 });
     });
 });
 

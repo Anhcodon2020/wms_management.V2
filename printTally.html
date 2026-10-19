@@ -98,6 +98,7 @@
                             <td>${cartonQty}</td>
                             <td></td>
                             <td></td>
+                            <td></td>
                         </tr>`;
                     
                     // Bảng 2: Kiểm đếm Pallet
@@ -129,6 +130,7 @@
                         <td>${totalCarton}</td>
                         <td></td>
                         <td>CBM: ${totalCbm.toFixed(3)}</td>
+                        <td></td>
                     </tr>`;
 
                 // Thêm dòng tổng cộng cho Bảng 2 (Kiểm đếm Pallet)
@@ -156,7 +158,7 @@
                             <div><strong>Nhà Cung Cấp:</strong> ${supplier}</div>
                             <div><strong>Ngày Nhập:</strong> ${rcvDate}</div>
                             <div><strong>Số Cont/Xe:</strong> ${first.contxe || '-'}</div>
-                            <div><strong>Giờ Bắt Đầu:</strong> ........ <strong>Kết Thúc:</strong> ........</div>
+                            <div><strong>Giờ Bắt Đầu:</strong> .......... <strong>Kết Thúc:</strong> ........</div>
                         </div>
 
                         <table class="tally-table">
@@ -166,8 +168,9 @@
                                     <th style="width:20%">Parent PO</th>
                                     <th style="width:25%">SKU</th>
                                     <th style="width:15%">Số Kiện (Kế hoạch)</th>
-                                    <th style="width:15%">Thực Nhận</th>
-                                    <th style="width:20%">Ghi Chú</th>
+                                    <th style="width:10%">Thực Nhận</th>
+                                    <th style="width:15%">Vị trí</th>
+                                    <th style="width:10%">Ghi Chú</th>
                                 </tr>
                             </thead>
                             <tbody>${tableRows}</tbody>

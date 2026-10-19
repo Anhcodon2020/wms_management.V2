@@ -911,10 +911,20 @@
                     
                     const firstSheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[firstSheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet).map(row => ({
-                        ...row,
-                        'DELIVERY DT': formatImportDeliveryDate(row['DELIVERY DT'])
-                    }));
+                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                    const jsonData = rows.slice(1).map(row => ({
+                        Origin: row[2], // C
+                        'PARENT PO': row[4], // E
+                        'VNDR CD': row[5], // F
+                        'DELIVERY DT': formatImportDeliveryDate(row[7]), // H
+                        'PO NUMBER': row[8], // I
+                        'HUB DC': row[17], // R
+                        'ITEM NO': row[18], // S
+                        QTY: row[25], // Z
+                        'MC CBM': row[29], // AD
+                        'QTY per PCK': 1,
+                        status: 'New'
+                    })).filter(row => row['PO NUMBER'] || row['ITEM NO'] || row['PARENT PO']);
 
                     if (jsonData.length === 0) {
                         showToast('File Excel không có dữ liệu!', 'error');

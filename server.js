@@ -32,15 +32,19 @@ const mysql = require('mysql2');
 let dbStatus = { message: '⏳ Đang kết nối...', class: '' };
 
 // Tao ket noi
-const connection = mysql.createConnection({
+const dbConfig = {
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  // Aiven bat buoc dung SSL, dong nay rat quan trong:
-  ssl: { rejectUnauthorized: false } 
-});
+  database: process.env.DB_NAME
+};
+
+if (String(process.env.DB_SSL).toLowerCase() === 'true') {
+  dbConfig.ssl = { rejectUnauthorized: false };
+}
+
+const connection = mysql.createConnection(dbConfig);
 
 connection.connect((err) => {
   if (err) {
@@ -883,13 +887,21 @@ app.get('/api/inbound', (req, res) => {
     const { q, start, end } = req.query;
     // JOIN voi bang nhacungcap de lay TENNCC
     let sql = `
-        SELECT i.*, 
-               MAX(n.TENNCC) as TENNCC, 
-               MAX(n.name_doc) as name_doc, 
-               MAX(m.cartonperpallet) as cartonperpallet
+        SELECT i.*,
+               n.TENNCC,
+               n.name_doc,
+               m.cartonperpallet
         FROM inbound i 
-        LEFT JOIN nhacungcap n ON i.MANCC = n.MANCC 
-        LEFT JOIN masterdata m ON i.sku = m.sku`;
+        LEFT JOIN (
+            SELECT MANCC, MAX(TENNCC) AS TENNCC, MAX(name_doc) AS name_doc
+            FROM nhacungcap
+            GROUP BY MANCC
+        ) n ON i.MANCC = n.MANCC
+        LEFT JOIN (
+            SELECT sku, MAX(cartonperpallet) AS cartonperpallet
+            FROM masterdata
+            GROUP BY sku
+        ) m ON i.sku = m.sku`;
     let params = [];
     let conditions = [];
 
@@ -902,7 +914,7 @@ app.get('/api/inbound', (req, res) => {
     if (end) { conditions.push('i.datercv <= ?'); params.push(end); }
 
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
-    sql += ' GROUP BY i.id ORDER BY i.datercv DESC, i.id DESC'; // Sap xep theo Ngay Nhap moi nhat, GROUP BY de tranh trung lap
+    sql += ' ORDER BY i.datercv DESC, i.id DESC';
 
     connection.query(sql, params, (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -1168,6 +1180,32 @@ app.get('/api/outbound', async (req, res) => {
         }
         res.json(results);
     });
+});
+
+app.post('/api/outbound/employees-by-jobno', async (req, res) => {
+    const normalizeJobNo = value => String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+    const jobnoKeys = [...new Set(
+        (Array.isArray(req.body.jobnos) ? req.body.jobnos : [])
+            .map(normalizeJobNo)
+            .filter(Boolean)
+    )];
+
+    if (jobnoKeys.length === 0) return res.json([]);
+
+    try {
+        const normalizeSql = "LOWER(REPLACE(TRIM(CAST(jobno AS CHAR)), ' ', ''))";
+        const [rows] = await connection.promise().query(
+            `SELECT jobno, nhanvien
+             FROM outbound_product
+             WHERE jobno IS NOT NULL
+               AND ${normalizeSql} IN (${jobnoKeys.map(() => '?').join(',')})`,
+            jobnoKeys
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('[API ERROR] POST /api/outbound/employees-by-jobno:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/inventory-whs/loc-ids', async (req, res) => {
@@ -1838,11 +1876,21 @@ app.get('/api/files', (req, res) => {
 
 // 1. Thống kê tổng quát
 app.get('/api/dashboard/stats', (req, res) => {
+    const today = typeof req.query.date === 'string' ? req.query.date : null;
+    if (today) {
+        const parsedDate = new Date(`${today}T00:00:00.000Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(today)
+            || Number.isNaN(parsedDate.getTime())
+            || parsedDate.toISOString().slice(0, 10) !== today) {
+            return res.status(400).json({ error: 'Ngày không hợp lệ' });
+        }
+    }
+
     const sql = `
         SELECT 
             (SELECT COUNT(*) FROM masterdata) as total_products,
-            (SELECT IFNULL(SUM(carton), 0) FROM inbound WHERE datercv = CURDATE()) as inbound_today,
-            (SELECT IFNULL(SUM(cbm), 0) FROM inbound WHERE datercv = CURDATE()) as inbound_today_cbm,
+            (SELECT IFNULL(SUM(carton), 0) FROM inbound WHERE datercv = COALESCE(?, CURDATE())) as inbound_today,
+            (SELECT IFNULL(SUM(cbm), 0) FROM inbound WHERE datercv = COALESCE(?, CURDATE())) as inbound_today_cbm,
             (SELECT IFNULL(SUM(carton), 0) FROM inbound WHERE YEARWEEK(datercv, 1) = YEARWEEK(CURDATE(), 1)) as inbound_week,
             (SELECT IFNULL(SUM(cbm), 0) FROM inbound WHERE YEARWEEK(datercv, 1) = YEARWEEK(CURDATE(), 1)) as inbound_week_cbm,
             (SELECT IFNULL(SUM(carton), 0) FROM outbound WHERE YEARWEEK(datestuff, 1) = YEARWEEK(CURDATE(), 1)) as outbound_week,
@@ -1879,7 +1927,7 @@ app.get('/api/dashboard/stats', (req, res) => {
                   AND DATEDIFF(CURDATE(), i.inbound_date) > 14
             ) as backlog_cbm
     `;
-    connection.query(sql, (err, results) => {
+    connection.query(sql, [today, today], (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(results[0]);
     });

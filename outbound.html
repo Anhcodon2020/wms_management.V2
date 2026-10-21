@@ -1119,6 +1119,28 @@
                 if (!response.ok) throw new Error('Không tải được dữ liệu outbound');
 
                 const rows = await response.json();
+                const jobnos = [...new Set(rows.map(item => String(item.jobno || '').trim()).filter(Boolean))];
+                const employeesResponse = await fetch('/api/outbound/employees-by-jobno', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobnos })
+                });
+                if (!employeesResponse.ok) {
+                    const error = await employeesResponse.json();
+                    throw new Error(error.error || 'Không tải được nhân viên theo Job No');
+                }
+
+                const employeeRows = await employeesResponse.json();
+                const normalizeJobNo = value => String(value || '').replace(/[\s\u00a0]/g, '').trim().toLowerCase();
+                const employeesByJob = new Map();
+                employeeRows.forEach(item => {
+                    const key = normalizeJobNo(item.jobno);
+                    const employee = String(item.nhanvien || '').trim();
+                    if (!key || !employee) return;
+                    if (!employeesByJob.has(key)) employeesByJob.set(key, new Set());
+                    employeesByJob.get(key).add(employee);
+                });
+
                 const containersByKey = {};
 
                 rows.forEach(item => {
@@ -1133,13 +1155,20 @@
                             container,
                             sealSet: new Set(),
                             jobSet: new Set(),
+                            employeeSet: new Set(),
                             carton: 0,
                             cbm: 0
                         };
                     }
 
                     if (item.seal) containersByKey[key].sealSet.add(String(item.seal).trim());
-                    if (item.jobno) containersByKey[key].jobSet.add(String(item.jobno).trim());
+                    if (item.jobno) {
+                        const jobno = String(item.jobno).trim();
+                        containersByKey[key].jobSet.add(jobno);
+                        (employeesByJob.get(normalizeJobNo(jobno)) || []).forEach(employee => {
+                            containersByKey[key].employeeSet.add(employee);
+                        });
+                    }
                     containersByKey[key].carton += Number(item.carton) || 0;
                     containersByKey[key].cbm += Number(item.cbm) || 0;
                 });
@@ -1151,6 +1180,7 @@
                         "Container": item.container,
                         "Seal": Array.from(item.sealSet).join(', '),
                         "Job No": Array.from(item.jobSet).join(', '),
+                        "Nhân viên": Array.from(item.employeeSet).join(', '),
                         "Tổng Carton": item.carton,
                         "Tổng CBM": Number(item.cbm.toFixed(3))
                     }));
@@ -1195,7 +1225,7 @@
 
                 totalWs['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
                 summaryWs['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 60 }];
-                detailWs['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 30 }, { wch: 14 }, { wch: 12 }];
+                detailWs['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 30 }, { wch: 24 }, { wch: 14 }, { wch: 12 }];
 
                 XLSX.utils.book_append_sheet(wb, totalWs, "TongHop");
                 XLSX.utils.book_append_sheet(wb, summaryWs, "TheoNgay");

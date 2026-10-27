@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xóa SSCC - WMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .filters { display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap: 15px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 13px; color: #566573; font-weight: 600; }
+        select { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #d7dfe5; border-radius: 5px; background: white; }
+        select:disabled { background: #f2f4f4; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; background: white; font-size: 14px; }
+        th, td { padding: 11px 13px; border-bottom: 1px solid #edf0f2; text-align: left; }
+        th { background: #2980b9; color: white; }
+        .empty { text-align: center; color: #7f8c8d; padding: 25px; }
+        .btn { border: 0; border-radius: 5px; padding: 7px 14px; color: white; cursor: pointer; font-weight: 600; }
+        .btn-delete { background: #e74c3c; }
+        .btn-cancel { background: #95a5a6; }
+        .status { min-height: 20px; margin-top: 12px; font-size: 14px; }
+        .status.error { color: #c0392b; }
+        .status.success { color: #218c54; }
+        .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
+        .modal-bg.show { display: flex; }
+        .modal { background: white; border-radius: 8px; padding: 24px; width: 420px; max-width: 92vw; }
+        .modal h3 { margin-top: 0; color: #c0392b; }
+        .modal dl { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; margin: 14px 0; font-size: 14px; }
+        .modal dt { color: #566573; font-weight: 600; }
+        .modal dd { margin: 0; word-break: break-all; }
+        .modal .actions { display: flex; justify-content: flex-end; gap: 10px; }
+        @media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">📦 WMS System</div>
+        <ul class="menu">
+            <li><a href="/dashboard">🏠 Trang Chủ</a></li>
+            <li><a href="/masterdata">📦 Master Data</a></li>
+            <li><a href="/inbound">📥 Nhập Kho</a></li>
+            <li><a href="/outbound">📤 Xuất Kho</a></li>
+            <li><a class="active" href="/deleteSSCC.html">🗑️ Xóa SSCC</a></li>
+            <li><a href="/transaction">🔍 Truy Vấn SKU</a></li>
+        </ul>
+    </div>
+
+    <main class="main-content">
+        <h2>🗑️ Xóa SSCC</h2>
+
+        <section class="card">
+            <div class="filters">
+                <div class="form-group">
+                    <label for="jobno">Job No</label>
+                    <select id="jobno"><option value="">-- Chọn Job No --</option></select>
+                </div>
+                <div class="form-group">
+                    <label for="jobnoType">Job No Type</label>
+                    <select id="jobnoType" disabled><option value="">-- Chọn Job No Type --</option></select>
+                </div>
+                <div class="form-group">
+                    <label for="sku">SKU</label>
+                    <select id="sku" disabled><option value="">-- Chọn SKU --</option></select>
+                </div>
+            </div>
+            <div id="status" class="status"></div>
+        </section>
+
+        <section class="card" style="padding:0; overflow:hidden;">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>SSCC</th><th>Pallet</th><th>Pallet Type</th><th>Thao tác</th></tr>
+                    </thead>
+                    <tbody id="tbody"><tr><td colspan="4" class="empty">Chọn Job No, Job No Type và SKU để xem danh sách</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="confirmModal" class="modal-bg">
+        <div class="modal">
+            <h3>⚠️ Xác nhận xóa SSCC</h3>
+            <p>Bạn có chắc chắn muốn xóa SSCC này? Thao tác không thể hoàn tác.</p>
+            <dl>
+                <dt>SSCC</dt><dd id="cSscc"></dd>
+                <dt>Job No</dt><dd id="cJob"></dd>
+                <dt>Job No Type</dt><dd id="cType"></dd>
+                <dt>SKU</dt><dd id="cSku"></dd>
+                <dt>Pallet</dt><dd id="cPallet"></dd>
+            </dl>
+            <div class="actions">
+                <button class="btn btn-cancel" onclick="closeConfirm()">Hủy</button>
+                <button id="confirmBtn" class="btn btn-delete" onclick="confirmDelete()">Xóa</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        let pending = null;
+
+        function setStatus(msg, type) {
+            $('status').textContent = msg || '';
+            $('status').className = 'status' + (type ? ' ' + type : '');
+        }
+
+        function esc(v) {
+            return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        async function getJson(url) {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Lỗi tải dữ liệu');
+            return data;
+        }
+
+        function fillSelect(sel, values, placeholder) {
+            sel.innerHTML = `<option value="">${placeholder}</option>` +
+                values.map(v => `<option value="${esc(v)}">${esc(v === '' ? '(trống)' : v)}</option>`).join('');
+            sel.disabled = values.length === 0;
+        }
+
+        function resetTable(msg) {
+            $('tbody').innerHTML = `<tr><td colspan="4" class="empty">${msg}</td></tr>`;
+        }
+
+        async function loadJobnos() {
+            try {
+                fillSelect($('jobno'), await getJson('/api/deletesscc/jobnos'), '-- Chọn Job No --');
+            } catch (e) { setStatus(e.message, 'error'); }
+        }
+
+        $('jobno').addEventListener('change', async () => {
+            fillSelect($('jobnoType'), [], '-- Chọn Job No Type --');
+            fillSelect($('sku'), [], '-- Chọn SKU --');
+            resetTable('Chọn Job No Type và SKU để xem danh sách');
+            if (!$('jobno').value) return;
+            try {
+                const types = await getJson('/api/deletesscc/jobno-types?jobno=' + encodeURIComponent($('jobno').value));
+                fillSelect($('jobnoType'), types, '-- Chọn Job No Type --');
+            } catch (e) { setStatus(e.message, 'error'); }
+        });
+
+        $('jobnoType').addEventListener('change', async () => {
+            fillSelect($('sku'), [], '-- Chọn SKU --');
+            resetTable('Chọn SKU để xem danh sách');
+            // "" là giá trị hợp lệ (jobno_type trống) nên dùng selectedIndex
+            if ($('jobnoType').selectedIndex <= 0) return;
+            try {
+                const q = `jobno=${encodeURIComponent($('jobno').value)}&jobno_type=${encodeURIComponent($('jobnoType').value)}`;
+                fillSelect($('sku'), await getJson('/api/deletesscc/skus?' + q), '-- Chọn SKU --');
+            } catch (e) { setStatus(e.message, 'error'); }
+        });
+
+        $('sku').addEventListener('change', () => loadList());
+
+        async function loadList() {
+            if (!$('sku').value) return resetTable('Chọn SKU để xem danh sách');
+            try {
+                const q = `jobno=${encodeURIComponent($('jobno').value)}&jobno_type=${encodeURIComponent($('jobnoType').value)}&sku=${encodeURIComponent($('sku').value)}`;
+                const rows = await getJson('/api/deletesscc/list?' + q);
+                if (!rows.length) return resetTable('Không có SSCC nào');
+                $('tbody').innerHTML = rows.map((r, i) => `
+                    <tr>
+                        <td>${esc(r.sscc)}</td>
+                        <td>${esc(r.pallet)}</td>
+                        <td>${esc(r.pallet_type)}</td>
+                        <td><button class="btn btn-delete" data-i="${i}">Xóa</button></td>
+                    </tr>`).join('');
+                $('tbody').querySelectorAll('button[data-i]').forEach(b =>
+                    b.addEventListener('click', () => openConfirm(rows[b.dataset.i])));
+            } catch (e) { setStatus(e.message, 'error'); }
+        }
+
+        function openConfirm(row) {
+            pending = { jobno: $('jobno').value, jobno_type: $('jobnoType').value, sku: $('sku').value, sscc: row.sscc };
+            $('cSscc').textContent = row.sscc;
+            $('cJob').textContent = pending.jobno;
+            $('cType').textContent = pending.jobno_type || '(trống)';
+            $('cSku').textContent = pending.sku;
+            $('cPallet').textContent = row.pallet ?? '';
+            $('confirmModal').classList.add('show');
+        }
+
+        function closeConfirm() {
+            $('confirmModal').classList.remove('show');
+            pending = null;
+        }
+
+        async function confirmDelete() {
+            if (!pending) return;
+            const btn = $('confirmBtn');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/deletesscc', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pending)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Xóa thất bại');
+                setStatus(data.message, 'success');
+                closeConfirm();
+                await loadList();
+            } catch (e) {
+                setStatus(e.message, 'error');
+                closeConfirm();
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeConfirm(); });
+        loadJobnos();
+    </script>
+</body>
+</html>

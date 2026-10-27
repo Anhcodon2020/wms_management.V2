@@ -1773,6 +1773,52 @@ app.delete('/api/scanfile/job/:jobno', (req, res) => {
     });
 });
 
+// 3b. API cho trang deleteSSCC
+app.get('/api/deletesscc/jobnos', (req, res) => {
+    connection.query("SELECT DISTINCT jobno FROM scanfile WHERE jobno IS NOT NULL AND jobno <> '' ORDER BY jobno DESC", (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows.map(r => r.jobno));
+    });
+});
+
+app.get('/api/deletesscc/jobno-types', (req, res) => {
+    const { jobno } = req.query;
+    if (!jobno) return res.json([]);
+    connection.query("SELECT DISTINCT jobno_type FROM scanfile WHERE jobno = ? ORDER BY jobno_type", [jobno], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows.map(r => r.jobno_type || ''));
+    });
+});
+
+app.get('/api/deletesscc/skus', (req, res) => {
+    const { jobno, jobno_type } = req.query;
+    if (!jobno) return res.json([]);
+    connection.query("SELECT DISTINCT sku FROM scanfile WHERE jobno = ? AND IFNULL(jobno_type,'') = ? ORDER BY sku", [jobno, jobno_type || ''], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows.map(r => r.sku));
+    });
+});
+
+app.get('/api/deletesscc/list', (req, res) => {
+    const { jobno, jobno_type, sku } = req.query;
+    if (!jobno || !sku) return res.json([]);
+    const sql = "SELECT id, sscc, pallet, pallet_type FROM scanfile WHERE jobno = ? AND IFNULL(jobno_type,'') = ? AND sku = ? ORDER BY id";
+    connection.query(sql, [jobno, jobno_type || '', sku], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.delete('/api/deletesscc', (req, res) => {
+    const { jobno, jobno_type, sku, sscc } = req.body || {};
+    if (!jobno || !sku || !sscc) return res.status(400).json({ error: 'Thiếu thông tin jobno/sku/sscc' });
+    const sql = "DELETE FROM scanfile WHERE jobno = ? AND IFNULL(jobno_type,'') = ? AND sku = ? AND sscc = ?";
+    connection.query(sql, [jobno, jobno_type || '', sku, sscc], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: `Đã xóa ${result.affectedRows} dòng SSCC ${sscc}`, affectedRows: result.affectedRows });
+    });
+});
+
 // 4. API Đối soát SKU giữa Outbound và Scanfile
 app.get('/api/scanfile/comparison', (req, res) => {
     const sql = `

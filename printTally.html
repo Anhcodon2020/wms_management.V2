@@ -116,7 +116,7 @@
                                 ${r === 0 ? `
                                     <td rowspan="${numPalletRows}">${item.sku}</td>
                                     <td rowspan="${numPalletRows}">${cpp || '-'}</td>
-                                    <td rowspan="${numPalletRows}">${estPalletDisplay}</td>
+                                    <td rowspan="${numPalletRows}">${cartonQty}</td>
                                 ` : ''}
                                 ${Array(15).fill('<td></td>').join('')}
                             </tr>`;
@@ -137,7 +137,7 @@
                 palletRows += `
                     <tr style="font-weight: bold; background-color: #f2f2f2;">
                         <td colspan="2" style="text-align: right;">TỔNG CỘNG:</td>
-                        <td>${totalEstPallet}</td>
+                        <td>${totalCarton}</td>
                         <td colspan="15"></td>
                     </tr>`;
 
@@ -182,7 +182,7 @@
                                 <tr>
                                     <th>SKU</th>
                                     <th>Quy Cách</th>
-                                    <th>Pallet (Dự kiến)</th>
+                                    <th>Số kiện</th>
                                     <th colspan="15">Chi Tiết Kiểm Đếm</th>
                                 </tr>
                             </thead>
